@@ -1,0 +1,1077 @@
+import pygame, random, sys, os, json
+import socket
+import threading
+import pickle
+import time
+
+# ================= INIT =================
+pygame.init()
+WIDTH, HEIGHT = 1000, 600
+FPS = 60
+
+# ================= NETWORK SETTINGS =================
+HOST = "0.0.0.0"
+PORT = 5555
+BUFFER_SIZE = 4096
+
+# ================= SETTINGS FILE =================
+SETTINGS_FILE = "settings.json"
+
+def load_settings():
+    """Beállítások betöltése"""
+    default_settings = {
+        "fullscreen": True,
+        "music_volume": 0.5,
+        "sfx_volume": 0.5,
+        "skin_index": 0
+    }
+    
+    try:
+        with open(SETTINGS_FILE, "r") as f:
+            settings = json.load(f)
+            for key in default_settings:
+                if key not in settings:
+                    settings[key] = default_settings[key]
+            return settings
+    except:
+        return default_settings
+
+def save_settings(settings):
+    """Beállítások mentése"""
+    try:
+        with open(SETTINGS_FILE, "w") as f:
+            json.dump(settings, f, indent=4)
+    except:
+        pass
+
+# Beállítások betöltése
+settings = load_settings()
+fullscreen_enabled = settings["fullscreen"]
+music_volume = settings["music_volume"]
+sfx_volume = settings["sfx_volume"]
+skin_index = settings["skin_index"]
+
+# ================= FULLSCREEN SETTING =================
+if fullscreen_enabled:
+    screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+    WIDTH, HEIGHT = screen.get_size()
+else:
+    screen = pygame.display.set_mode((WIDTH, HEIGHT))
+
+pygame.display.set_caption("Geometry Dash PRO")
+clock = pygame.time.Clock()
+
+# ================= COLORS =================
+WHITE=(255,255,255); BLACK=(0,0,0); BLUE=(0,150,255)
+RED=(255,50,50); GREEN=(50,255,50); PURPLE=(200,50,255)
+YELLOW=(255,255,0); GRAY=(100,100,100); ORANGE=(255,165,0)
+CYAN=(0,255,255); PINK=(255,105,180)
+
+# ================= SETTINGS =================
+GROUND_Y = HEIGHT - 100
+GRAVITY = 0.6
+JUMP = -13
+BASE_SPEED = 7
+MAX_SPEED = 15
+SPEED_INCREASE_RATE = 0.05
+
+# ================= HIGHSCORE & MAX SPEED FILE =================
+SCORES_FILE = "scores.json"
+
+def load_scores():
+    default_scores = {
+        "high_score": 0,
+        "max_speed": BASE_SPEED
+    }
+    
+    try:
+        with open(SCORES_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return default_scores
+
+def save_scores(high_score, max_speed):
+    try:
+        with open(SCORES_FILE, "w") as f:
+            json.dump({"high_score": high_score, "max_speed": max_speed}, f, indent=4)
+    except:
+        pass
+
+scores = load_scores()
+high_score = scores["high_score"]
+max_speed_record = scores["max_speed"]
+
+# ================= PLAYER SKINS =================
+SKINS = [
+    (0,150,255),(255,255,0),(255,0,255),(0,255,255),(255,0,0),(0,255,0)
+]
+
+# ================= PARALLAX BG =================
+stars = [[random.randint(0,WIDTH), random.randint(0,HEIGHT), random.randint(1,3)] for _ in range(200)]
+
+# ================= SOUND EFFECTS =================
+jump_sound = None
+death_sound = None
+score_sound = None
+
+def load_sounds():
+    global jump_sound, death_sound, score_sound
+    try:
+        jump_sound = pygame.mixer.Sound("jump.wav")
+        jump_sound.set_volume(sfx_volume)
+    except:
+        jump_sound = None
+    
+    try:
+        death_sound = pygame.mixer.Sound("death.wav")
+        death_sound.set_volume(sfx_volume)
+    except:
+        death_sound = None
+    
+    try:
+        score_sound = pygame.mixer.Sound("score.wav")
+        score_sound.set_volume(sfx_volume)
+    except:
+        score_sound = None
+
+def update_sfx_volume():
+    if jump_sound:
+        jump_sound.set_volume(sfx_volume)
+    if death_sound:
+        death_sound.set_volume(sfx_volume)
+    if score_sound:
+        score_sound.set_volume(sfx_volume)
+
+def play_jump_sound():
+    if jump_sound:
+        jump_sound.play()
+
+def play_death_sound():
+    if death_sound:
+        death_sound.play()
+
+def play_score_sound():
+    if score_sound:
+        score_sound.play()
+
+load_sounds()
+
+# ================= MUSIC CONTROL =================
+def play_menu_music():
+    try:
+        pygame.mixer.music.load("menumusic.mp3")
+        pygame.mixer.music.set_volume(music_volume)
+        pygame.mixer.music.play(-1)
+    except:
+        pass
+
+def play_game_music():
+    try:
+        pygame.mixer.music.load("background.mp3")
+        pygame.mixer.music.set_volume(music_volume)
+        pygame.mixer.music.play(-1)
+    except:
+        pass
+
+def update_music_volume():
+    pygame.mixer.music.set_volume(music_volume)
+
+def toggle_fullscreen():
+    global screen, WIDTH, HEIGHT, fullscreen_enabled, GROUND_Y
+    fullscreen_enabled = not fullscreen_enabled
+    
+    if fullscreen_enabled:
+        screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+        WIDTH, HEIGHT = screen.get_size()
+    else:
+        WIDTH, HEIGHT = 1000, 600
+        screen = pygame.display.set_mode((WIDTH, HEIGHT))
+    
+    GROUND_Y = HEIGHT - 100
+    save_current_settings()
+
+def save_current_settings():
+    current_settings = {
+        "fullscreen": fullscreen_enabled,
+        "music_volume": music_volume,
+        "sfx_volume": sfx_volume,
+        "skin_index": skin_index
+    }
+    save_settings(current_settings)
+
+def get_local_ip():
+    """Helyi IP cím lekérése"""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except:
+        return "127.0.0.1"
+
+def is_valid_ip(ip_string):
+    """IP cím validálás"""
+    try:
+        parts = ip_string.split('.')
+        if len(parts) != 4:
+            return False
+        for part in parts:
+            num = int(part)
+            if num < 0 or num > 255:
+                return False
+        return True
+    except:
+        return False
+
+# ================= NETWORK CLASS =================
+class NetworkManager:
+    def __init__(self):
+        self.socket = None
+        self.connected = False
+        self.is_host = False
+        self.client_socket = None
+        self.other_player_data = None
+        self.running = False
+        self.connection_error = None
+        
+    def host_game(self):
+        """Játék hosztolása"""
+        try:
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.socket.bind((HOST, PORT))
+            self.socket.listen(1)
+            self.is_host = True
+            self.running = True
+            
+            threading.Thread(target=self._wait_for_connection, daemon=True).start()
+            return True
+        except Exception as e:
+            print(f"Host error: {e}")
+            self.connection_error = str(e)
+            return False
+    
+    def _wait_for_connection(self):
+        """Várakozás csatlakozóra"""
+        try:
+            self.socket.settimeout(None)
+            self.client_socket, addr = self.socket.accept()
+            self.connected = True
+            print(f"Client connected from {addr}")
+            threading.Thread(target=self._receive_data, daemon=True).start()
+        except Exception as e:
+            print(f"Accept error: {e}")
+            self.connection_error = str(e)
+    
+    def join_game(self, host_ip):
+        """Csatlakozás játékhoz"""
+        # IP validálás
+        if not is_valid_ip(host_ip):
+            self.connection_error = "Wrong IP!"
+            return False
+        
+        try:
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.socket.settimeout(5)  # 5 másodperces timeout
+            self.socket.connect((host_ip, PORT))
+            self.is_host = False
+            self.connected = True
+            self.running = True
+            self.connection_error = None
+            threading.Thread(target=self._receive_data, daemon=True).start()
+            return True
+        except socket.timeout:
+            self.connection_error = "Wrong IP! (Connection timeout)"
+            return False
+        except socket.gaierror:
+            self.connection_error = "Wrong IP! (Invalid address)"
+            return False
+        except ConnectionRefusedError:
+            self.connection_error = "Wrong IP! (Connection refused)"
+            return False
+        except Exception as e:
+            print(f"Join error: {e}")
+            self.connection_error = f"Wrong IP! ({str(e)})"
+            return False
+    
+    def _receive_data(self):
+        """Adatok fogadása"""
+        while self.running and self.connected:
+            try:
+                if self.is_host and self.client_socket:
+                    data = self.client_socket.recv(BUFFER_SIZE)
+                else:
+                    data = self.socket.recv(BUFFER_SIZE)
+                
+                if data:
+                    self.other_player_data = pickle.loads(data)
+                else:
+                    self.connected = False
+                    break
+            except Exception as e:
+                print(f"Receive error: {e}")
+                self.connected = False
+                break
+    
+    def send_data(self, data):
+        """Adatok küldése"""
+        if not self.connected:
+            return
+        
+        try:
+            pickled_data = pickle.dumps(data)
+            if self.is_host and self.client_socket:
+                self.client_socket.send(pickled_data)
+            else:
+                self.socket.send(pickled_data)
+        except Exception as e:
+            print(f"Send error: {e}")
+            self.connected = False
+    
+    def close(self):
+        """Kapcsolat lezárása"""
+        self.running = False
+        self.connected = False
+        try:
+            if self.client_socket:
+                self.client_socket.close()
+            if self.socket:
+                self.socket.close()
+        except:
+            pass
+
+# ================= PLAYER =================
+class Player:
+    def __init__(self, x=150, player_skin=0):
+        self.size=35
+        self.x=x
+        self.y=GROUND_Y-self.size
+        self.vy=0
+        self.can_jump=True
+        self.rot=0
+        self.trail=[]
+        self.dead=False
+        self.jump_cooldown = 0
+        self.skin = player_skin
+
+    def jump(self):
+        if self.can_jump and self.jump_cooldown <= 0:
+            self.vy=JUMP
+            self.can_jump=False
+            self.jump_cooldown = 8
+            play_jump_sound()
+
+    def update(self, obstacles):
+        if self.jump_cooldown > 0:
+            self.jump_cooldown -= 1
+        
+        old_y = self.y
+        old_x = self.x
+        
+        self.vy += GRAVITY
+        self.y += self.vy
+
+        if self.y >= GROUND_Y-self.size:
+            self.y=GROUND_Y-self.size
+            self.vy=0
+            self.can_jump=True
+            self.rot=0
+        else:
+            self.rot += 10
+
+        for o in obstacles:
+            if o.type in ["block", "moving_block", "narrow_block", "gap_block"]:
+                player_left = self.x
+                player_right = self.x + self.size
+                player_top = self.y
+                player_bottom = self.y + self.size
+                
+                block_left = o.x
+                block_right = o.x + o.w
+                block_top = o.y
+                block_bottom = o.y + o.h
+                
+                h_overlap = player_right > block_left and player_left < block_right
+                v_overlap = player_bottom > block_top and player_top < block_bottom
+                
+                if h_overlap and v_overlap:
+                    if self.vy > 0 and old_y + self.size <= block_top + 5:
+                        self.y = block_top - self.size
+                        self.vy = 0
+                        self.can_jump = True
+                        self.rot = 0
+                    elif self.vy < 0 and old_y >= block_bottom - 5:
+                        self.dead = True
+                    elif old_x + self.size <= block_left + 5 or old_x >= block_right - 5:
+                        self.dead = True
+                    else:
+                        self.dead = True
+
+        self.trail.append((self.x,self.y))
+        if len(self.trail)>15:
+            self.trail.pop(0)
+
+    def draw(self, is_other_player=False):
+        # Ghost trail
+        for i,pos in enumerate(self.trail):
+            alpha=int(i*12)
+            surf=pygame.Surface((self.size,self.size),pygame.SRCALPHA)
+            pygame.draw.rect(surf, SKINS[self.skin], (0,0,self.size,self.size))
+            surf.set_alpha(alpha)
+            screen.blit(surf,pos)
+
+        surf=pygame.Surface((self.size,self.size),pygame.SRCALPHA)
+        pygame.draw.rect(surf, SKINS[self.skin], (0,0,self.size,self.size))
+        
+        # Más játékos más kerettel
+        border_color = CYAN if is_other_player else WHITE
+        pygame.draw.rect(surf, border_color,(0,0,self.size,self.size),2)
+        
+        rot=pygame.transform.rotate(surf,self.rot)
+        rect=rot.get_rect(center=(self.x+self.size//2,self.y+self.size//2))
+        screen.blit(rot,rect)
+
+    def rect(self):
+        return pygame.Rect(self.x,self.y,self.size,self.size)
+    
+    def get_data(self):
+        """Játékos adatok serialization-höz"""
+        return {
+            'x': self.x,
+            'y': self.y,
+            'vy': self.vy,
+            'rot': self.rot,
+            'dead': self.dead,
+            'skin': self.skin,
+            'trail': self.trail[-5:]
+        }
+    
+    def set_data(self, data):
+        """Játékos adatok beállítása"""
+        if data:
+            self.x = data.get('x', self.x)
+            self.y = data.get('y', self.y)
+            self.vy = data.get('vy', self.vy)
+            self.rot = data.get('rot', self.rot)
+            self.dead = data.get('dead', self.dead)
+            self.skin = data.get('skin', self.skin)
+
+# ================= OBSTACLE =================
+class Obstacle:
+    def __init__(self, current_speed):
+        self.speed = current_speed
+        rand = random.randint(1, 100)
+        
+        if rand <= 25:
+            self.type = "spike"
+        elif rand <= 45:
+            self.type = "block"
+        elif rand <= 60:
+            self.type = "double_spike"
+        elif rand <= 70:
+            self.type = "moving_block"
+        elif rand <= 80:
+            self.type = "tall_spike"
+        elif rand <= 90:
+            self.type = "triple_spike"
+        elif rand <= 95:
+            self.type = "narrow_block"
+        else:
+            self.type = "gap_block"
+        
+        self.x = WIDTH
+
+        if self.type == "spike":
+            self.w = self.h = 35
+            self.color = RED
+            self.y = GROUND_Y - self.h
+            
+        elif self.type == "double_spike":
+            self.w = 70
+            self.h = 35
+            self.color = RED
+            self.y = GROUND_Y - self.h
+            
+        elif self.type == "triple_spike":
+            self.w = 105
+            self.h = 35
+            self.color = RED
+            self.y = GROUND_Y - self.h
+            
+        elif self.type == "tall_spike":
+            self.w = 35
+            self.h = 60
+            self.color = ORANGE
+            self.y = GROUND_Y - self.h
+            
+        elif self.type == "block":
+            self.w = 40
+            self.h = random.choice([80, 120])
+            self.color = PURPLE
+            self.y = GROUND_Y - self.h
+            
+        elif self.type == "narrow_block":
+            self.w = 25
+            self.h = 100
+            self.color = PINK
+            self.y = GROUND_Y - self.h
+            
+        elif self.type == "gap_block":
+            self.w = 40
+            self.h = 90
+            self.color = PURPLE
+            self.y = GROUND_Y - self.h
+            self.gap_width = 80
+            self.has_second = True
+            
+        elif self.type == "moving_block":
+            self.w = 40
+            self.h = 100
+            self.color = CYAN
+            self.y = GROUND_Y - self.h
+            self.move_range = 80
+            self.move_speed = 4
+            self.move_dir = 1
+            self.start_y = self.y
+
+    def update(self):
+        self.x -= self.speed
+        
+        if self.type == "moving_block":
+            self.y += self.move_speed * self.move_dir
+            if self.y <= self.start_y - self.move_range:
+                self.move_dir = 1
+            elif self.y >= self.start_y:
+                self.move_dir = -1
+
+    def draw(self):
+        if self.type == "spike":
+            pts = [(self.x + self.w//2, self.y), (self.x, self.y + self.h), (self.x + self.w, self.y + self.h)]
+            pygame.draw.polygon(screen, self.color, pts)
+            pygame.draw.polygon(screen, WHITE, pts, 2)
+            
+        elif self.type == "double_spike":
+            pts1 = [(self.x + 17, self.y), (self.x, self.y + self.h), (self.x + 35, self.y + self.h)]
+            pygame.draw.polygon(screen, self.color, pts1)
+            pygame.draw.polygon(screen, WHITE, pts1, 2)
+            pts2 = [(self.x + 52, self.y), (self.x + 35, self.y + self.h), (self.x + 70, self.y + self.h)]
+            pygame.draw.polygon(screen, self.color, pts2)
+            pygame.draw.polygon(screen, WHITE, pts2, 2)
+            
+        elif self.type == "triple_spike":
+            for i in range(3):
+                offset = i * 35
+                pts = [(self.x + offset + 17, self.y), 
+                       (self.x + offset, self.y + self.h), 
+                       (self.x + offset + 35, self.y + self.h)]
+                pygame.draw.polygon(screen, self.color, pts)
+                pygame.draw.polygon(screen, WHITE, pts, 2)
+            
+        elif self.type == "tall_spike":
+            pts = [(self.x + self.w//2, self.y), (self.x, self.y + self.h), (self.x + self.w, self.y + self.h)]
+            pygame.draw.polygon(screen, self.color, pts)
+            pygame.draw.polygon(screen, WHITE, pts, 2)
+            
+        elif self.type == "block":
+            pygame.draw.rect(screen, self.color, (self.x, self.y, self.w, self.h))
+            pygame.draw.line(screen, YELLOW, (self.x, self.y), (self.x + self.w, self.y), 4)
+            pygame.draw.rect(screen, WHITE, (self.x, self.y, self.w, self.h), 2)
+            
+        elif self.type == "narrow_block":
+            pygame.draw.rect(screen, self.color, (self.x, self.y, self.w, self.h))
+            pygame.draw.line(screen, YELLOW, (self.x, self.y), (self.x + self.w, self.y), 4)
+            pygame.draw.rect(screen, WHITE, (self.x, self.y, self.w, self.h), 2)
+            pygame.draw.circle(screen, YELLOW, (int(self.x + self.w//2), int(self.y + self.h//2)), 3)
+            
+        elif self.type == "gap_block":
+            pygame.draw.rect(screen, self.color, (self.x, self.y, self.w, self.h))
+            pygame.draw.line(screen, YELLOW, (self.x, self.y), (self.x + self.w, self.y), 4)
+            pygame.draw.rect(screen, WHITE, (self.x, self.y, self.w, self.h), 2)
+            if self.has_second:
+                x2 = self.x + self.w + self.gap_width
+                pygame.draw.rect(screen, self.color, (x2, self.y, self.w, self.h))
+                pygame.draw.line(screen, YELLOW, (x2, self.y), (x2 + self.w, self.y), 4)
+                pygame.draw.rect(screen, WHITE, (x2, self.y, self.w, self.h), 2)
+            
+        elif self.type == "moving_block":
+            pygame.draw.rect(screen, self.color, (self.x, self.y, self.w, self.h))
+            pygame.draw.line(screen, YELLOW, (self.x, self.y), (self.x + self.w, self.y), 4)
+            pygame.draw.rect(screen, WHITE, (self.x, self.y, self.w, self.h), 2)
+            pygame.draw.circle(screen, WHITE, (int(self.x + self.w//2), int(self.y + self.h//2)), 5)
+
+    def rect(self):
+        return pygame.Rect(self.x, self.y, self.w, self.h)
+
+    def off(self):
+        if self.type == "gap_block":
+            return self.x + self.w + self.gap_width + self.w < 0
+        return self.x + self.w < 0
+
+# ================= GAME STATE =================
+player = Player(player_skin=skin_index)
+other_player = Player(x=150, player_skin=0)
+obstacles = []
+spawn = 0
+score = 0
+current_speed = BASE_SPEED
+last_game_speed = BASE_SPEED
+state = "menu"
+network = NetworkManager()
+multiplayer_mode = False
+
+font_big = pygame.font.Font(None, 80)
+font_med = pygame.font.Font(None, 40)
+font_small = pygame.font.Font(None, 30)
+
+# ================= SETTINGS STATE =================
+setting_selected = 0
+
+# ================= MULTIPLAYER INPUT =================
+input_text = ""
+input_active = False
+error_message = ""
+error_message_timer = 0
+
+# ================= FUNCTIONS =================
+def reset():
+    global player, other_player, obstacles, spawn, score, current_speed
+    player = Player(player_skin=skin_index)
+    other_player = Player(x=150, player_skin=0)
+    obstacles = []
+    spawn = 0
+    score = 0
+    current_speed = BASE_SPEED
+
+def parallax_bg():
+    screen.fill((10, 10, 30))
+    for s in stars:
+        s[0] -= s[2] * (current_speed / BASE_SPEED)
+        if s[0] < 0: 
+            s[0] = WIDTH
+        pygame.draw.circle(screen, WHITE, (s[0], s[1]), s[2])
+
+def draw_ground():
+    pygame.draw.rect(screen, (40, 40, 40), (0, GROUND_Y, WIDTH, HEIGHT))
+    pygame.draw.line(screen, YELLOW, (0, GROUND_Y), (WIDTH, GROUND_Y), 4)
+
+def draw_skin_preview(x, y):
+    pygame.draw.rect(screen, SKINS[skin_index], (x, y, 60, 60))
+    pygame.draw.rect(screen, WHITE, (x, y, 60, 60), 3)
+
+def draw_volume_bar(x, y, volume, selected=False):
+    bar_width = 300
+    bar_height = 30
+    fill_width = int(bar_width * volume)
+    
+    color = YELLOW if selected else GRAY
+    pygame.draw.rect(screen, color, (x, y, bar_width, bar_height), 3)
+    pygame.draw.rect(screen, GREEN, (x + 2, y + 2, fill_width - 4, bar_height - 4))
+    vol_text = font_small.render(f"{int(volume * 100)}%", True, WHITE)
+    screen.blit(vol_text, (x + bar_width + 20, y))
+
+def draw_toggle(x, y, enabled, selected=False):
+    box_size = 30
+    color = YELLOW if selected else GRAY
+    pygame.draw.rect(screen, color, (x, y, box_size, box_size), 3)
+    if enabled:
+        pygame.draw.rect(screen, GREEN, (x + 3, y + 3, box_size - 6, box_size - 6))
+    status = "ON" if enabled else "OFF"
+    text = font_small.render(status, True, WHITE)
+    screen.blit(text, (x + box_size + 10, y))
+
+def get_speed_color_for_value(speed_value):
+    speed_ratio = (speed_value - BASE_SPEED) / (MAX_SPEED - BASE_SPEED)
+    if speed_ratio < 0.33:
+        return GREEN
+    elif speed_ratio < 0.66:
+        return YELLOW
+    else:
+        return RED
+
+def get_speed_color():
+    return get_speed_color_for_value(current_speed)
+
+def show_error(message):
+    """Hibaüzenet megjelenítése"""
+    global error_message, error_message_timer
+    error_message = message
+    error_message_timer = 180  # 3 másodperc (60 FPS * 3)
+
+# ================= START MENU MUSIC =================
+play_menu_music()
+
+# ================= MAIN LOOP =================
+running = True
+space_held = False
+
+while running:
+    clock.tick(FPS)
+    
+    # Error message timer
+    if error_message_timer > 0:
+        error_message_timer -= 1
+        if error_message_timer == 0:
+            error_message = ""
+
+    for e in pygame.event.get():
+        if e.type == pygame.QUIT:
+            running = False
+            network.close()
+
+        if e.type == pygame.KEYDOWN:
+            # Input mező kezelés
+            if input_active:
+                if e.key == pygame.K_RETURN:
+                    if input_text.strip():
+                        if network.join_game(input_text.strip()):
+                            multiplayer_mode = True
+                            state = "waiting"
+                            error_message = ""
+                        else:
+                            # Hibaüzenet megjelenítése
+                            show_error(network.connection_error or "Wrong IP!")
+                            input_text = ""
+                    input_active = False
+                elif e.key == pygame.K_BACKSPACE:
+                    input_text = input_text[:-1]
+                elif e.key == pygame.K_ESCAPE:
+                    input_active = False
+                    input_text = ""
+                    error_message = ""
+                elif len(input_text) < 15 and e.unicode.isprintable():
+                    input_text += e.unicode
+                continue
+            
+            if e.key == pygame.K_ESCAPE:
+                if state == "menu": 
+                    running = False
+                elif state == "play":
+                    state = "menu"
+                    play_menu_music()
+                    if multiplayer_mode:
+                        network.close()
+                        multiplayer_mode = False
+                elif state == "over":
+                    state = "menu"
+                    play_menu_music()
+                    if multiplayer_mode:
+                        network.close()
+                        multiplayer_mode = False
+                elif state == "settings":
+                    state = "menu"
+                elif state == "multiplayer_menu":
+                    state = "menu"
+                    network.close()
+                    multiplayer_mode = False
+                    error_message = ""
+                elif state == "waiting":
+                    state = "menu"
+                    network.close()
+                    multiplayer_mode = False
+
+            if e.key == pygame.K_SPACE:
+                space_held = True
+                if state == "menu":
+                    state = "play"
+                    reset()
+                    play_game_music()
+                elif state == "play":
+                    player.jump()
+                elif state == "over":
+                    state = "play"
+                    reset()
+                    play_game_music()
+                elif state == "waiting" and network.connected:
+                    state = "play"
+                    reset()
+                    play_game_music()
+
+            if e.key == pygame.K_s and state == "menu":
+                state = "settings"
+                setting_selected = 0
+            
+            if e.key == pygame.K_m and state == "menu":
+                state = "multiplayer_menu"
+                error_message = ""
+
+            # Settings navigáció
+            if state == "settings":
+                if e.key == pygame.K_UP:
+                    setting_selected = (setting_selected - 1) % 4
+                elif e.key == pygame.K_DOWN:
+                    setting_selected = (setting_selected + 1) % 4
+                    
+                if setting_selected == 0 and e.key in [pygame.K_LEFT, pygame.K_RIGHT]:
+                    if e.key == pygame.K_RIGHT:
+                        skin_index = (skin_index + 1) % len(SKINS)
+                    else:
+                        skin_index = (skin_index - 1) % len(SKINS)
+                    player.skin = skin_index
+                    save_current_settings()
+                
+                if setting_selected == 1:
+                    if e.key == pygame.K_LEFT:
+                        music_volume = max(0, music_volume - 0.1)
+                        update_music_volume()
+                        save_current_settings()
+                    elif e.key == pygame.K_RIGHT:
+                        music_volume = min(1.0, music_volume + 0.1)
+                        update_music_volume()
+                        save_current_settings()
+                
+                if setting_selected == 2:
+                    if e.key == pygame.K_LEFT:
+                        sfx_volume = max(0, sfx_volume - 0.1)
+                        update_sfx_volume()
+                        save_current_settings()
+                    elif e.key == pygame.K_RIGHT:
+                        sfx_volume = min(1.0, sfx_volume + 0.1)
+                        update_sfx_volume()
+                        save_current_settings()
+                
+                if setting_selected == 3 and e.key in [pygame.K_LEFT, pygame.K_RIGHT, pygame.K_RETURN]:
+                    toggle_fullscreen()
+            
+            # Multiplayer menu
+            if state == "multiplayer_menu":
+                if e.key == pygame.K_h:
+                    if network.host_game():
+                        multiplayer_mode = True
+                        state = "waiting"
+                        error_message = ""
+                    else:
+                        show_error("Failed to host game!")
+                
+                if e.key == pygame.K_j:
+                    input_active = True
+                    input_text = ""
+                    error_message = ""
+        
+        if e.type == pygame.KEYUP:
+            if e.key == pygame.K_SPACE:
+                space_held = False
+
+    # ================= CONTINUOUS JUMP =================
+    if state == "play" and space_held:
+        player.jump()
+
+    # ================= MULTIPLAYER SYNC =================
+    if multiplayer_mode and network.connected and state == "play":
+        my_data = player.get_data()
+        network.send_data(my_data)
+        
+        if network.other_player_data:
+            other_player.set_data(network.other_player_data)
+
+    # ================= GAME LOGIC =================
+    if state == "play":
+        current_speed = min(MAX_SPEED, BASE_SPEED + (score * SPEED_INCREASE_RATE))
+        
+        player.update(obstacles)
+        
+        # Multiplayer módban a másik játékos is frissül
+        if multiplayer_mode and network.connected:
+            # Másik játékos ütközés-vizsgálata
+            for o in obstacles:
+                if o.type in ["spike", "double_spike", "tall_spike", "triple_spike"]:
+                    if other_player.rect().colliderect(o.rect()):
+                        other_player.dead = True
+        
+        # Bármelyik játékos halála → Game Over
+        if player.dead or (multiplayer_mode and other_player.dead):
+            state = "over"
+            pygame.mixer.music.stop()
+            play_death_sound()
+            
+            last_game_speed = current_speed
+            
+            if current_speed > max_speed_record:
+                max_speed_record = current_speed
+            
+            if score > high_score:
+                high_score = score
+            
+            save_scores(high_score, max_speed_record)
+        
+        spawn += 1
+        spawn_rate = max(40, 70 - int(score * 0.5))
+        
+        if spawn > spawn_rate:
+            obstacles.append(Obstacle(current_speed))
+            spawn = 0
+
+        for o in obstacles[:]:
+            o.update()
+            if o.off():
+                obstacles.remove(o)
+                score += 1
+                play_score_sound()
+
+        # Saját játékos spike ütközés
+        for o in obstacles:
+            if o.type in ["spike", "double_spike", "tall_spike", "triple_spike"]:
+                if player.rect().colliderect(o.rect()):
+                    state = "over"
+                    pygame.mixer.music.stop()
+                    play_death_sound()
+                    
+                    last_game_speed = current_speed
+                    
+                    if current_speed > max_speed_record:
+                        max_speed_record = current_speed
+                    
+                    if score > high_score:
+                        high_score = score
+                    
+                    save_scores(high_score, max_speed_record)
+
+    # ================= DRAW =================
+    parallax_bg()
+    draw_ground()
+
+    if state == "menu":
+        t = font_big.render("GEOMETRY DASH PRO", True, BLUE)
+        screen.blit(t, (WIDTH//2 - t.get_width()//2, 80))
+
+        screen.blit(font_med.render("SPACE = PLAY", True, WHITE), (WIDTH//2 - 150, 200))
+        screen.blit(font_med.render("M = MULTIPLAYER", True, CYAN), (WIDTH//2 - 150, 240))
+        screen.blit(font_med.render("S = SETTINGS", True, WHITE), (WIDTH//2 - 150, 280))
+        screen.blit(font_med.render("ESC = EXIT", True, WHITE), (WIDTH//2 - 150, 320))
+
+        screen.blit(font_med.render(f"High Score: {high_score}", True, YELLOW), (WIDTH//2 - 150, 370))
+        
+        speed_color = get_speed_color_for_value(max_speed_record)
+        screen.blit(font_med.render(f"Max Speed: {max_speed_record:.1f}", True, speed_color), (WIDTH//2 - 150, 410))
+
+        screen.blit(font_med.render("Current Skin:", True, WHITE), (WIDTH//2 - 150, 460))
+        draw_skin_preview(WIDTH//2 + 50, 450)
+        
+        screen.blit(font_small.render("TIP: Hold SPACE for continuous jumps!", True, CYAN), (WIDTH//2 - 200, HEIGHT - 60))
+
+    elif state == "multiplayer_menu":
+        screen.blit(font_big.render("MULTIPLAYER", True, CYAN), (WIDTH//2 - 180, 100))
+        
+        local_ip = get_local_ip()
+        screen.blit(font_med.render(f"Your IP: {local_ip}", True, YELLOW), (WIDTH//2 - 150, 200))
+        
+        screen.blit(font_med.render("H = HOST GAME", True, GREEN), (WIDTH//2 - 150, 280))
+        screen.blit(font_med.render("J = JOIN GAME", True, GREEN), (WIDTH//2 - 150, 320))
+        screen.blit(font_med.render("ESC = BACK", True, WHITE), (WIDTH//2 - 150, 360))
+        
+        screen.blit(font_small.render("To play together, both players must be", True, WHITE), (WIDTH//2 - 200, 420))
+        screen.blit(font_small.render("on the same WiFi network!", True, WHITE), (WIDTH//2 - 200, 450))
+        
+        # Error message
+        if error_message:
+            error_surf = font_med.render(error_message, True, RED)
+            screen.blit(error_surf, (WIDTH//2 - error_surf.get_width()//2, 540))
+        
+        # Input field
+        if input_active:
+            pygame.draw.rect(screen, YELLOW, (WIDTH//2 - 150, 500, 300, 40), 3)
+            input_surf = font_small.render(input_text, True, WHITE)
+            screen.blit(input_surf, (WIDTH//2 - 140, 510))
+            screen.blit(font_small.render("Enter host IP:", True, GRAY), (WIDTH//2 - 150, 475))
+
+    elif state == "waiting":
+        screen.blit(font_big.render("WAITING...", True, YELLOW), (WIDTH//2 - 180, 200))
+        
+        if network.is_host:
+            screen.blit(font_med.render("Waiting for player to join...", True, WHITE), (WIDTH//2 - 220, 280))
+            screen.blit(font_small.render(f"Your IP: {get_local_ip()}", True, CYAN), (WIDTH//2 - 120, 320))
+        else:
+            screen.blit(font_med.render("Connecting to host...", True, WHITE), (WIDTH//2 - 180, 280))
+        
+        if network.connected:
+            screen.blit(font_med.render("CONNECTED!", True, GREEN), (WIDTH//2 - 130, 350))
+            screen.blit(font_med.render("Press SPACE to start", True, WHITE), (WIDTH//2 - 180, 390))
+        
+        screen.blit(font_med.render("ESC = CANCEL", True, WHITE), (WIDTH//2 - 150, HEIGHT - 100))
+
+    elif state == "settings":
+        screen.blit(font_big.render("SETTINGS", True, GREEN), (WIDTH//2 - 150, 60))
+        
+        y_start = 160
+        
+        color1 = YELLOW if setting_selected == 0 else WHITE
+        screen.blit(font_med.render("< Skin >", True, color1), (WIDTH//2 - 200, y_start))
+        draw_skin_preview(WIDTH//2 + 100, y_start - 5)
+        
+        y_start += 80
+        color2 = YELLOW if setting_selected == 1 else WHITE
+        screen.blit(font_med.render("Music Volume:", True, color2), (WIDTH//2 - 200, y_start))
+        draw_volume_bar(WIDTH//2 - 200, y_start + 40, music_volume, setting_selected == 1)
+        
+        y_start += 120
+        color3 = YELLOW if setting_selected == 2 else WHITE
+        screen.blit(font_med.render("SFX Volume:", True, color3), (WIDTH//2 - 200, y_start))
+        draw_volume_bar(WIDTH//2 - 200, y_start + 40, sfx_volume, setting_selected == 2)
+        
+        y_start += 120
+        color4 = YELLOW if setting_selected == 3 else WHITE
+        screen.blit(font_med.render("Fullscreen:", True, color4), (WIDTH//2 - 200, y_start))
+        draw_toggle(WIDTH//2 - 200, y_start + 40, fullscreen_enabled, setting_selected == 3)
+        
+        screen.blit(font_small.render("UP/DOWN = Navigate", True, WHITE), (WIDTH//2 - 150, HEIGHT - 150))
+        screen.blit(font_small.render("LEFT/RIGHT/ENTER = Adjust", True, WHITE), (WIDTH//2 - 150, HEIGHT - 120))
+        screen.blit(font_small.render("ESC = Back to Menu", True, WHITE), (WIDTH//2 - 150, HEIGHT - 90))
+        
+        screen.blit(font_small.render("Settings are auto-saved", True, GREEN), (WIDTH//2 - 130, HEIGHT - 50))
+
+    elif state == "play":
+        for o in obstacles: 
+            o.draw()
+        
+        # Multiplayer módban másik játékos rajzolása
+        if multiplayer_mode and network.connected:
+            other_player.draw(is_other_player=True)
+        
+        player.draw()
+        
+        screen.blit(font_med.render(f"Score: {score}", True, WHITE), (10, 10))
+        
+        speed_color = get_speed_color()
+        speed_text = f"Speed: {current_speed:.1f}"
+        speed_surf = font_small.render(speed_text, True, speed_color)
+        screen.blit(speed_surf, (10, 50))
+        
+        bar_width = 200
+        bar_height = 10
+        bar_x = 10
+        bar_y = 85
+        speed_ratio = (current_speed - BASE_SPEED) / (MAX_SPEED - BASE_SPEED)
+        fill_width = int(bar_width * speed_ratio)
+        
+        pygame.draw.rect(screen, GRAY, (bar_x, bar_y, bar_width, bar_height), 2)
+        pygame.draw.rect(screen, speed_color, (bar_x, bar_y, fill_width, bar_height))
+        
+        # Multiplayer jelző
+        if multiplayer_mode and network.connected:
+            connection_text = "MULTIPLAYER MODE"
+            conn_surf = font_small.render(connection_text, True, CYAN)
+            screen.blit(conn_surf, (WIDTH - conn_surf.get_width() - 10, 10))
+
+    elif state == "over":
+        screen.blit(font_big.render("GAME OVER", True, RED), (WIDTH//2 - 200, 160))
+        screen.blit(font_med.render(f"Final Score: {score}", True, WHITE), (WIDTH//2 - 150, 240))
+        
+        reached_speed_color = get_speed_color_for_value(last_game_speed)
+        screen.blit(font_small.render(f"Speed Reached: {last_game_speed:.1f}", True, reached_speed_color), (WIDTH//2 - 150, 280))
+        
+        if score == high_score and score > 0:
+            screen.blit(font_med.render("NEW HIGH SCORE!", True, YELLOW), (WIDTH//2 - 180, 320))
+        
+        if last_game_speed >= max_speed_record and last_game_speed > BASE_SPEED:
+            screen.blit(font_small.render("NEW MAX SPEED RECORD!", True, CYAN), (WIDTH//2 - 150, 360))
+        else:
+            screen.blit(font_small.render(f"Best Speed: {max_speed_record:.1f}", True, GRAY), (WIDTH//2 - 150, 360))
+        
+        screen.blit(font_med.render("SPACE = Restart", True, WHITE), (WIDTH//2 - 150, 410))
+        screen.blit(font_med.render("ESC = Menu", True, WHITE), (WIDTH//2 - 150, 450))
+
+    pygame.display.flip()
+
+network.close()
+pygame.quit()
+sys.exit()
