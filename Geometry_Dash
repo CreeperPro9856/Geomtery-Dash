@@ -12,7 +12,7 @@ FPS = 60
 # ================= NETWORK SETTINGS =================
 HOST = "0.0.0.0"
 PORT = 5555
-BUFFER_SIZE = 4096
+BUFFER_SIZE = 65536  # Nagyobb buffer → kevesebb fragmentáció
 
 # ================= SETTINGS FILE =================
 SETTINGS_FILE = "settings.json"
@@ -195,15 +195,20 @@ def is_valid_ip(ip_string):
         return False
 
 # ================= NETWORK CLASS =================
+# Az üzenetek egy QUEUE-ba kerülnek → a main thread olvasja őket.
+# Ez megoldja a "start signal overírás" problémát.
+
 class NetworkManager:
     def __init__(self):
         self.socket = None
         self.connected = False
         self.is_host = False
         self.client_socket = None
-        self.other_player_data = None
         self.running = False
         self.connection_error = None
+        # Thread-safe üzenet queue
+        self.message_queue = []
+        self.queue_lock = threading.Lock()
 
     def host_game(self):
         try:
@@ -224,7 +229,8 @@ class NetworkManager:
             self.socket.settimeout(None)
             self.client_socket, addr = self.socket.accept()
             self.connected = True
-            threading.Thread(target=self._receive_data, daemon=True).start()
+            print(f"Client connected: {addr}")
+            threading.Thread(target=self._receive_loop, daemon=True).start()
         except Exception as e:
             self.connection_error = str(e)
 
@@ -236,42 +242,80 @@ class NetworkManager:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.settimeout(5)
             self.socket.connect((host_ip, PORT))
+            self.socket.settimeout(None)  # Csatlakozás után nincs timeout
             self.is_host = False
             self.connected = True
             self.running = True
             self.connection_error = None
-            threading.Thread(target=self._receive_data, daemon=True).start()
+            threading.Thread(target=self._receive_loop, daemon=True).start()
             return True
         except:
             self.connection_error = "Wrong IP!"
             return False
 
-    def _receive_data(self):
-        while self.running and self.connected:
+    # ── LENGTH-PREFIXED KÜLDÉS/FOGADÁS ──
+    # Minden üzenetet 4 byte-os méret-prefix-szel küldünk.
+    # Így nem fordul elő, hogy két üzenet összeolvad az TCP stream-ben.
+
+    def _send_msg(self, sock, data):
+        """Serialized data küldése length-prefix-szel"""
+        payload = pickle.dumps(data)
+        length = len(payload).to_bytes(4, 'big')
+        sock.sendall(length + payload)
+
+    def _recv_msg(self, sock):
+        """Egy teljes üzenet fogadása length-prefix alapján"""
+        # Először 4 byte-ot olvasunk (méret)
+        raw_len = self._recv_exact(sock, 4)
+        if raw_len is None:
+            return None
+        msg_len = int.from_bytes(raw_len, 'big')
+        # Majd pontosan msg_len byte-ot olvasunk
+        raw_data = self._recv_exact(sock, msg_len)
+        if raw_data is None:
+            return None
+        return pickle.loads(raw_data)
+
+    def _recv_exact(self, sock, n):
+        """Pontosan n byte-ot olvasunk a socketből"""
+        data = b''
+        while len(data) < n:
             try:
-                if self.is_host and self.client_socket:
-                    data = self.client_socket.recv(BUFFER_SIZE)
-                else:
-                    data = self.socket.recv(BUFFER_SIZE)
-                if data:
-                    self.other_player_data = pickle.loads(data)
-                else:
-                    self.connected = False
-                    break
+                chunk = sock.recv(n - len(data))
+                if not chunk:
+                    return None
+                data += chunk
             except:
+                return None
+        return data
+
+    def _receive_loop(self):
+        """Vételi loop — minden üzenet a queue-ba kerül"""
+        sock = self.client_socket if self.is_host else self.socket
+        while self.running and self.connected:
+            msg = self._recv_msg(sock)
+            if msg is None:
                 self.connected = False
                 break
+            with self.queue_lock:
+                self.message_queue.append(msg)
 
     def send_data(self, data):
-        if not self.connected: return
+        """Üzenet küldése"""
+        if not self.connected:
+            return
         try:
-            pickled = pickle.dumps(data)
-            if self.is_host and self.client_socket:
-                self.client_socket.send(pickled)
-            else:
-                self.socket.send(pickled)
+            sock = self.client_socket if self.is_host else self.socket
+            self._send_msg(sock, data)
         except:
             self.connected = False
+
+    def get_messages(self):
+        """Main thread-ből hívva: összes érkezett üzenet levonja a queue-ból"""
+        with self.queue_lock:
+            msgs = list(self.message_queue)
+            self.message_queue.clear()
+        return msgs
 
     def close(self):
         self.running = False
@@ -280,6 +324,7 @@ class NetworkManager:
             if self.client_socket: self.client_socket.close()
             if self.socket: self.socket.close()
         except: pass
+        self.message_queue.clear()
 
 # ================= PLAYER =================
 class Player:
@@ -454,6 +499,8 @@ class Obstacle:
             pygame.draw.rect(screen, self.color, (self.x, self.y, self.w, self.h))
             pygame.draw.line(screen, YELLOW, (self.x, self.y), (self.x+self.w, self.y), 4)
             pygame.draw.rect(screen, WHITE, (self.x, self.y, self.w, self.h), 2)
+            if self.type == "narrow_block":
+                pygame.draw.circle(screen, YELLOW, (int(self.x+self.w//2), int(self.y+self.h//2)), 3)
         elif self.type == "gap_block":
             pygame.draw.rect(screen, self.color, (self.x, self.y, self.w, self.h))
             pygame.draw.line(screen, YELLOW, (self.x, self.y), (self.x+self.w, self.y), 4)
@@ -532,7 +579,7 @@ def draw_volume_bar(x, y, volume, selected=False):
     fw = int(bw * volume)
     c = YELLOW if selected else GRAY
     pygame.draw.rect(screen, c, (x, y, bw, bh), 3)
-    pygame.draw.rect(screen, GREEN, (x+2, y+2, fw-4, bh-4))
+    pygame.draw.rect(screen, GREEN, (x+2, y+2, max(0, fw-4), bh-4))
     screen.blit(font_small.render(f"{int(volume*100)}%", True, WHITE), (x+bw+20, y))
 
 def draw_toggle(x, y, enabled, selected=False):
@@ -558,9 +605,9 @@ def show_error(msg):
     error_message_timer = 180
 
 def trigger_game_over(result):
-    """Multiplayer game over trigger"""
+    """Game over trigger — MP eredményt beállítja"""
     global state, last_game_speed, max_speed_record, high_score, mp_result
-    if mp_result is not None: return  # Már triggered
+    if mp_result is not None: return
     mp_result = result
     state = "over"
     pygame.mixer.music.stop()
@@ -587,13 +634,42 @@ while running:
         if error_message_timer == 0:
             error_message = ""
 
+    # ================= NETWORK MESSAGE PROCESSING =================
+    # Ez MINDIG fut — nem csak play state-ben! Így a "start" signal nem veszhet el.
+    if multiplayer_mode and network.connected:
+        messages = network.get_messages()
+        for msg in messages:
+            if not isinstance(msg, dict):
+                continue
+
+            msg_type = msg.get("type")
+
+            # ── START signal (csak client fogadja) ──
+            if msg_type == "start" and not network.is_host:
+                if state == "waiting":
+                    state = "play"
+                    reset()
+                    play_game_music()
+
+            # ── GAME OVER signal ──
+            elif msg_type == "game_over":
+                result = msg.get("result")  # "win" oder "lose" — nekünk
+                if result in ("win", "lose"):
+                    trigger_game_over(result)
+
+            # ── Player data ──
+            elif msg_type == "player_data":
+                if state == "play":
+                    other_player.set_data(msg.get("data"))
+
+    # ================= EVENT HANDLING =================
     for e in pygame.event.get():
         if e.type == pygame.QUIT:
             running = False
             network.close()
 
         if e.type == pygame.KEYDOWN:
-            # Input kezelés
+            # Input mező kezelés
             if input_active:
                 if e.key == pygame.K_RETURN:
                     if input_text.strip():
@@ -629,12 +705,11 @@ while running:
                     multiplayer_mode = False
                     error_message = ""
 
-            # SPACE kezelés
+            # SPACE
             if e.key == pygame.K_SPACE:
                 space_held = True
 
                 if state == "menu":
-                    # Egyjátékos indítás
                     state = "play"
                     reset()
                     play_game_music()
@@ -653,14 +728,14 @@ while running:
                         reset()
                         play_game_music()
 
-                # HOST indítja a játékot a waiting-ben
+                # Waiting: csak HOST indíthat
                 elif state == "waiting":
                     if network.is_host and network.connected:
-                        # Host elküldi a "START" signalt
                         network.send_data({"type": "start"})
                         state = "play"
                         reset()
                         play_game_music()
+                    # Client: semmi sem történik
 
             if e.key == pygame.K_s and state == "menu":
                 state = "settings"
@@ -712,43 +787,9 @@ while running:
     if state == "play" and space_held:
         player.jump()
 
-    # ================= NETWORK MESSAGING =================
-    if multiplayer_mode and network.connected:
-        # Client: fogadja a HOST üzeneteit
-        if not network.is_host and network.other_player_data:
-            msg = network.other_player_data
-
-            # START signal fogadás
-            if isinstance(msg, dict) and msg.get("type") == "start":
-                state = "play"
-                reset()
-                play_game_music()
-                network.other_player_data = None
-
-            # GAME_OVER signal fogadás
-            elif isinstance(msg, dict) and msg.get("type") == "game_over":
-                # A host mondja nekünk ki minek az eredménye
-                if msg.get("result") == "win":
-                    trigger_game_over("win")
-                else:
-                    trigger_game_over("lose")
-                network.other_player_data = None
-
-            # Normál player data
-            elif isinstance(msg, dict) and msg.get("type") == "player_data":
-                other_player.set_data(msg.get("data"))
-
-        # Host: fogadja a CLIENT üzeneteit
-        elif network.is_host and network.other_player_data:
-            msg = network.other_player_data
-            if isinstance(msg, dict) and msg.get("type") == "player_data":
-                other_player.set_data(msg.get("data"))
-
-    # ================= MULTIPLAYER DATA SEND =================
+    # ================= SEND OWN PLAYER DATA =================
     if multiplayer_mode and network.connected and state == "play":
-        # Saját data küldése
-        my_msg = {"type": "player_data", "data": player.get_data()}
-        network.send_data(my_msg)
+        network.send_data({"type": "player_data", "data": player.get_data()})
 
     # ================= GAME LOGIC =================
     if state == "play":
@@ -757,37 +798,35 @@ while running:
         player.update(obstacles)
 
         if multiplayer_mode and network.connected:
-            # Másik játékos update (lokálisan számoljuk)
             other_player.update(obstacles)
 
-            # Spike ütközés SAJÁT játékosra
+            # Spike collision — SAJÁT
             for o in obstacles:
                 if o.type in ["spike","double_spike","tall_spike","triple_spike"]:
                     if not player.dead and player.rect().colliderect(o.rect()):
                         player.dead = True
 
-            # Spike ütközés MÁSIK játékosra
-            for o in obstacles:
-                if o.type in ["spike","double_spike","tall_spike","triple_spike"]:
-                    if not other_player.dead and other_player.rect().colliderect(o.rect()):
-                        other_player.dead = True
+            # Spike collision — MÁSIK (csak HOST ellenőrzi, hogy ne duplikálódjon)
+            if network.is_host:
+                for o in obstacles:
+                    if o.type in ["spike","double_spike","tall_spike","triple_spike"]:
+                        if not other_player.dead and other_player.rect().colliderect(o.rect()):
+                            other_player.dead = True
 
-            # Ha SAJÁT meghalt → mi veszettünk
+            # Ha SAJÁT meghalt → mi vesztettünk
             if player.dead and mp_result is None:
                 trigger_game_over("lose")
-                # HOST-nak szólunk hogy mi meghaltunk
-                if not network.is_host:
-                    network.send_data({"type": "game_over", "result": "win"})  # A másiknak win
-                else:
-                    network.send_data({"type": "game_over", "result": "win"})
+                # Mondjuk a másiknak: ő nyert
+                network.send_data({"type": "game_over", "result": "win"})
 
-            # Ha MÁSIK meghalt → mi nyertünk (csak HOST ellenőrzi)
+            # Ha MÁSIK meghalt → mi nyertünk (csak HOST detektálja)
             if network.is_host and other_player.dead and mp_result is None:
                 trigger_game_over("win")
-                network.send_data({"type": "game_over", "result": "lose"})  # A másiknak lose
+                # Mondjuk a client-nek: ő veszett
+                network.send_data({"type": "game_over", "result": "lose"})
 
         else:
-            # Egyjátékos spike ütközés
+            # ── SINGLEPLAYER ──
             for o in obstacles:
                 if o.type in ["spike","double_spike","tall_spike","triple_spike"]:
                     if player.rect().colliderect(o.rect()):
@@ -802,7 +841,7 @@ while running:
                 if score > high_score: high_score = score
                 save_scores(high_score, max_speed_record)
 
-        # Akadály spawn (csak HOST-on, vagy egyjátékosban)
+        # Obstacle spawn — csak HOST-on (MP) vagy egyj.
         if not multiplayer_mode or network.is_host:
             spawn += 1
             spawn_rate = max(40, 70 - int(score * 0.5))
@@ -810,7 +849,6 @@ while running:
                 obstacles.append(Obstacle(current_speed))
                 spawn = 0
 
-        # Akadály update + score
         for o in obstacles[:]:
             o.update()
             if o.off():
@@ -864,8 +902,9 @@ while running:
             else:
                 screen.blit(font_small.render("(Waiting for someone to join...)", True, GRAY), (WIDTH//2-200, 360))
         else:
+            # CLIENT
             if network.connected:
-                screen.blit(font_med.render("Connected to host!", True, GREEN), (WIDTH//2-200, 280))
+                screen.blit(font_med.render("Connected!", True, GREEN), (WIDTH//2-150, 280))
                 screen.blit(font_med.render("Waiting for host to start...", True, WHITE), (WIDTH//2-240, 330))
             else:
                 screen.blit(font_med.render("Connecting...", True, WHITE), (WIDTH//2-150, 280))
@@ -918,16 +957,14 @@ while running:
         screen.blit(overlay, (0, 0))
 
         if multiplayer_mode:
-            # MULTIPLAYER OVER
+            # ── MULTIPLAYER GAME OVER ──
             if mp_result == "win":
                 txt = font_huge.render("YOU WIN!", True, GREEN)
                 screen.blit(txt, (WIDTH//2 - txt.get_width()//2, 100))
-                # Fényes zöld border hatás
                 pygame.draw.rect(screen, GREEN, (40, 80, WIDTH-80, 160), 4)
             elif mp_result == "lose":
                 txt = font_huge.render("YOU LOSE!", True, RED)
                 screen.blit(txt, (WIDTH//2 - txt.get_width()//2, 100))
-                # Piros border hatás
                 pygame.draw.rect(screen, RED, (40, 80, WIDTH-80, 160), 4)
 
             screen.blit(font_med.render(f"Score: {score}", True, WHITE), (WIDTH//2-100, 280))
@@ -936,7 +973,7 @@ while running:
             screen.blit(font_med.render("SPACE = Back to Menu", True, WHITE), (WIDTH//2-180, 400))
             screen.blit(font_med.render("ESC = Exit", True, WHITE), (WIDTH//2-100, 440))
         else:
-            # SINGLEPLAYER OVER
+            # ── SINGLEPLAYER GAME OVER ──
             screen.blit(font_big.render("GAME OVER", True, RED), (WIDTH//2-200, 120))
             screen.blit(font_med.render(f"Final Score: {score}", True, WHITE), (WIDTH//2-150, 220))
             sc = get_speed_color_for_value(last_game_speed)
