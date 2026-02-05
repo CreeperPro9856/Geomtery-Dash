@@ -666,40 +666,69 @@ while running:
                     if not network.is_host and "obstacles" in msg:
                         obstacles_data = msg["obstacles"]
                         
-                        # Optimalizált sync: minden obstacle-hoz x alapján keresünk matching-et
-                        # Ha van matching -> update, ha nincs -> create, ha van existing de nincs data -> remove
+                        # Teljes szinkronizáció: egyszerűen újra létrehozzuk az obstacle listát
+                        # Ez biztosítja, hogy minden property helyes legyen
+                        new_obstacles = []
                         
-                        # Mark all existing as "not seen"
-                        for o in obstacles:
-                            o._synced = False
-                        
-                        # Update or create from data
                         for obs_data in obstacles_data:
-                            # Keresünk matching obstacle-t x pozíció alapján (+/- 50px tolerance)
+                            # Keresünk existing obstacle-t ugyanazon a helyen
                             found = None
                             for existing in obstacles:
                                 if (existing.type == obs_data["type"] and 
-                                    abs(existing.x - obs_data["x"]) < 50):
+                                    abs(existing.x - obs_data["x"]) < 30):
                                     found = existing
                                     break
                             
                             if found:
-                                # Update existing
+                                # Update existing obstacle összes property-jével
                                 found.x = obs_data["x"]
                                 found.y = obs_data["y"]
+                                found.w = obs_data["w"]
+                                found.h = obs_data["h"]
                                 found.speed = obs_data["speed"]
-                                found._synced = True
+                                found.color = obs_data["color"]
+                                
+                                # Moving block speciális mezők
+                                if found.type == "moving_block":
+                                    found.start_y = obs_data.get("start_y", found.y)
+                                    found.move_range = obs_data.get("move_range", 80)
+                                    found.move_speed = obs_data.get("move_speed", 4)
+                                    found.move_dir = obs_data.get("move_dir", 1)
+                                
+                                # Gap block speciális mezők
+                                elif found.type == "gap_block":
+                                    found.gap_width = obs_data.get("gap_width", 80)
+                                    found.has_second = obs_data.get("has_second", True)
+                                
+                                new_obstacles.append(found)
                             else:
-                                # Create new
-                                h = obs_data.get("h") if obs_data["type"] == "block" else None
-                                new_obs = Obstacle(obs_data["speed"], obs_data["type"], h)
+                                # Új obstacle létrehozása - egyszerű inicializálás nélkül
+                                new_obs = Obstacle.__new__(Obstacle)
+                                new_obs.type = obs_data["type"]
                                 new_obs.x = obs_data["x"]
                                 new_obs.y = obs_data["y"]
-                                new_obs._synced = True
-                                obstacles.append(new_obs)
+                                new_obs.w = obs_data["w"]
+                                new_obs.h = obs_data["h"]
+                                new_obs.speed = obs_data["speed"]
+                                new_obs.color = obs_data["color"]
+                                
+                                # Moving block speciális mezők
+                                if new_obs.type == "moving_block":
+                                    new_obs.start_y = obs_data.get("start_y", new_obs.y)
+                                    new_obs.move_range = obs_data.get("move_range", 80)
+                                    new_obs.move_speed = obs_data.get("move_speed", 4)
+                                    new_obs.move_dir = obs_data.get("move_dir", 1)
+                                
+                                # Gap block speciális mezők
+                                elif new_obs.type == "gap_block":
+                                    new_obs.gap_width = obs_data.get("gap_width", 80)
+                                    new_obs.has_second = obs_data.get("has_second", True)
+                                
+                                new_obstacles.append(new_obs)
                         
-                        # Remove obstacles that weren't in the update (they're off-screen)
-                        obstacles[:] = [o for o in obstacles if o._synced]
+                        # Cseréljük le az egész obstacles listát
+                        obstacles.clear()
+                        obstacles.extend(new_obstacles)
                         
                         # Score és speed frissítés (globals() használata Pylance warning elkerülésére)
                         if "score" in msg:
@@ -844,11 +873,22 @@ while running:
                     "type": o.type,
                     "x": o.x,
                     "y": o.y,
-                    "speed": o.speed
+                    "w": o.w,
+                    "h": o.h,
+                    "speed": o.speed,
+                    "color": o.color
                 }
-                # Block magasság is kell
-                if o.type == "block":
-                    obs["h"] = o.h
+                # Moving block extra adatok
+                if o.type == "moving_block":
+                    obs["start_y"] = o.start_y
+                    obs["move_range"] = o.move_range
+                    obs["move_speed"] = o.move_speed
+                    obs["move_dir"] = o.move_dir
+                # Gap block extra adatok
+                elif o.type == "gap_block":
+                    obs["gap_width"] = o.gap_width
+                    obs["has_second"] = o.has_second
+                
                 obstacles_data.append(obs)
             msg["obstacles"] = obstacles_data
             msg["score"] = score
