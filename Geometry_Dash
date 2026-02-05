@@ -427,7 +427,12 @@ class Player:
 
 # ================= OBSTACLE =================
 class Obstacle:
+    _next_id = 0  # Class variable for unique IDs
+    
     def __init__(self, current_speed, obs_type=None, obs_h=None):
+        self.id = Obstacle._next_id
+        Obstacle._next_id += 1
+        
         self.speed = current_speed
 
         if obs_type:
@@ -666,21 +671,18 @@ while running:
                     if not network.is_host and "obstacles" in msg:
                         obstacles_data = msg["obstacles"]
                         
-                        # Teljes szinkronizáció: egyszerűen újra létrehozzuk az obstacle listát
-                        # Ez biztosítja, hogy minden property helyes legyen
+                        # ID-alapú szinkronizáció
+                        # Létrehozunk egy dict-et az existing obstacles-ból ID szerint
+                        existing_by_id = {o.id: o for o in obstacles if hasattr(o, 'id')}
+                        
                         new_obstacles = []
                         
                         for obs_data in obstacles_data:
-                            # Keresünk existing obstacle-t ugyanazon a helyen
-                            found = None
-                            for existing in obstacles:
-                                if (existing.type == obs_data["type"] and 
-                                    abs(existing.x - obs_data["x"]) < 30):
-                                    found = existing
-                                    break
+                            obs_id = obs_data["id"]
                             
-                            if found:
-                                # Update existing obstacle összes property-jével
+                            if obs_id in existing_by_id:
+                                # Update existing obstacle
+                                found = existing_by_id[obs_id]
                                 found.x = obs_data["x"]
                                 found.y = obs_data["y"]
                                 found.w = obs_data["w"]
@@ -702,8 +704,9 @@ while running:
                                 
                                 new_obstacles.append(found)
                             else:
-                                # Új obstacle létrehozása - egyszerű inicializálás nélkül
+                                # Új obstacle létrehozása
                                 new_obs = Obstacle.__new__(Obstacle)
+                                new_obs.id = obs_id
                                 new_obs.type = obs_data["type"]
                                 new_obs.x = obs_data["x"]
                                 new_obs.y = obs_data["y"]
@@ -870,6 +873,7 @@ while running:
             obstacles_data = []
             for o in obstacles:
                 obs = {
+                    "id": o.id,
                     "type": o.type,
                     "x": o.x,
                     "y": o.y,
@@ -979,10 +983,8 @@ while running:
                     obstacles.remove(o)
                     score += 1
                     play_score_sound()
-        else:
-            # MULTIPLAYER CLIENT: csak update (obstacles sync-et a network-ről kapja)
-            for o in obstacles:
-                o.update()
+        # MULTIPLAYER CLIENT: NEM futtat obstacle.update()-et!
+        # Minden pozíciót a HOST-tól kap, csak rajzolja őket
 
     # ================= DRAW =================
     parallax_bg()
