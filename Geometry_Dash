@@ -672,7 +672,6 @@ while running:
                         obstacles_data = msg["obstacles"]
                         
                         # ID-alapú szinkronizáció
-                        # Létrehozunk egy dict-et az existing obstacles-ból ID szerint
                         existing_by_id = {o.id: o for o in obstacles if hasattr(o, 'id')}
                         
                         new_obstacles = []
@@ -681,59 +680,47 @@ while running:
                             obs_id = obs_data["id"]
                             
                             if obs_id in existing_by_id:
-                                # Update existing obstacle
+                                # Update existing obstacle - pozíciók a HOST-tól
                                 found = existing_by_id[obs_id]
                                 found.x = obs_data["x"]
-                                found.y = obs_data["y"]
-                                found.w = obs_data["w"]
-                                found.h = obs_data["h"]
+                                found.y = obs_data["y"]  # Existing obstacle-nál OK az y update
                                 found.speed = obs_data["speed"]
-                                found.color = obs_data["color"]
                                 
-                                # Moving block speciális mezők
+                                # Moving block mozgás állapot
                                 if found.type == "moving_block":
-                                    found.start_y = obs_data.get("start_y", found.y)
-                                    found.move_range = obs_data.get("move_range", 80)
-                                    found.move_speed = obs_data.get("move_speed", 4)
-                                    found.move_dir = obs_data.get("move_dir", 1)
-                                
-                                # Gap block speciális mezők
-                                elif found.type == "gap_block":
-                                    found.gap_width = obs_data.get("gap_width", 80)
-                                    found.has_second = obs_data.get("has_second", True)
+                                    found.move_dir = obs_data.get("move_dir", found.move_dir)
                                 
                                 new_obstacles.append(found)
                             else:
-                                # Új obstacle létrehozása
-                                new_obs = Obstacle.__new__(Obstacle)
+                                # ÚJ obstacle: normál constructor inicializálja HELYESEN
+                                new_obs = Obstacle(obs_data["speed"], obs_data["type"], obs_data.get("h"))
+                                
+                                # Felülírjuk az ID-t és CSAK az X pozíciót!
+                                # Az Y-t a constructor már helyesen beállította (GROUND_Y - h)
                                 new_obs.id = obs_id
-                                new_obs.type = obs_data["type"]
                                 new_obs.x = obs_data["x"]
-                                new_obs.y = obs_data["y"]
-                                new_obs.w = obs_data["w"]
-                                new_obs.h = obs_data["h"]
-                                new_obs.speed = obs_data["speed"]
-                                new_obs.color = obs_data["color"]
+                                # NEM írjuk felül az y-t! A constructor már jó értéket adott neki.
                                 
-                                # Moving block speciális mezők
+                                # Moving block esetén mozgás állapot (de start_y már helyes)
                                 if new_obs.type == "moving_block":
-                                    new_obs.start_y = obs_data.get("start_y", new_obs.y)
-                                    new_obs.move_range = obs_data.get("move_range", 80)
-                                    new_obs.move_speed = obs_data.get("move_speed", 4)
-                                    new_obs.move_dir = obs_data.get("move_dir", 1)
-                                
-                                # Gap block speciális mezők
-                                elif new_obs.type == "gap_block":
-                                    new_obs.gap_width = obs_data.get("gap_width", 80)
-                                    new_obs.has_second = obs_data.get("has_second", True)
+                                    # A HOST y pozíciója alapján számoljuk a move_dir-t
+                                    # Ha HOST y > start_y → lefelé megy
+                                    host_y = obs_data["y"]
+                                    if abs(host_y - new_obs.start_y) > 5:
+                                        # Van eltérés, szinkronizáljuk
+                                        new_obs.y = host_y
+                                        if host_y > new_obs.start_y + new_obs.move_range / 2:
+                                            new_obs.move_dir = -1
+                                        else:
+                                            new_obs.move_dir = 1
                                 
                                 new_obstacles.append(new_obs)
                         
-                        # Cseréljük le az egész obstacles listát
+                        # Cseréljük le az obstacles listát
                         obstacles.clear()
                         obstacles.extend(new_obstacles)
                         
-                        # Score és speed frissítés (globals() használata Pylance warning elkerülésére)
+                        # Score és speed frissítés
                         if "score" in msg:
                             globals()["score"] = msg["score"]
                         if "current_speed" in msg:
