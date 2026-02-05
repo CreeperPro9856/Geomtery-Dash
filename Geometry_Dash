@@ -661,6 +661,51 @@ while running:
             elif msg_type == "player_data":
                 if state == "play":
                     other_player.set_data(msg.get("data"))
+                    
+                    # CLIENT: fogadja a HOST obstacle adatait + score
+                    if not network.is_host and "obstacles" in msg:
+                        obstacles_data = msg["obstacles"]
+                        
+                        # Optimalizált sync: minden obstacle-hoz x alapján keresünk matching-et
+                        # Ha van matching -> update, ha nincs -> create, ha van existing de nincs data -> remove
+                        
+                        # Mark all existing as "not seen"
+                        for o in obstacles:
+                            o._synced = False
+                        
+                        # Update or create from data
+                        for obs_data in obstacles_data:
+                            # Keresünk matching obstacle-t x pozíció alapján (+/- 50px tolerance)
+                            found = None
+                            for existing in obstacles:
+                                if (existing.type == obs_data["type"] and 
+                                    abs(existing.x - obs_data["x"]) < 50):
+                                    found = existing
+                                    break
+                            
+                            if found:
+                                # Update existing
+                                found.x = obs_data["x"]
+                                found.y = obs_data["y"]
+                                found.speed = obs_data["speed"]
+                                found._synced = True
+                            else:
+                                # Create new
+                                h = obs_data.get("h") if obs_data["type"] == "block" else None
+                                new_obs = Obstacle(obs_data["speed"], obs_data["type"], h)
+                                new_obs.x = obs_data["x"]
+                                new_obs.y = obs_data["y"]
+                                new_obs._synced = True
+                                obstacles.append(new_obs)
+                        
+                        # Remove obstacles that weren't in the update (they're off-screen)
+                        obstacles[:] = [o for o in obstacles if o._synced]
+                        
+                        # Score és speed frissítés (globals() használata Pylance warning elkerülésére)
+                        if "score" in msg:
+                            globals()["score"] = msg["score"]
+                        if "current_speed" in msg:
+                            globals()["current_speed"] = msg["current_speed"]
 
     # ================= EVENT HANDLING =================
     for e in pygame.event.get():
@@ -787,9 +832,29 @@ while running:
     if state == "play" and space_held:
         player.jump()
 
-    # ================= SEND OWN PLAYER DATA =================
+    # ================= SEND OWN PLAYER DATA + OBSTACLES =================
     if multiplayer_mode and network.connected and state == "play":
-        network.send_data({"type": "player_data", "data": player.get_data()})
+        msg = {"type": "player_data", "data": player.get_data()}
+        
+        # HOST küldi az obstacle adatokat + score
+        if network.is_host:
+            obstacles_data = []
+            for o in obstacles:
+                obs = {
+                    "type": o.type,
+                    "x": o.x,
+                    "y": o.y,
+                    "speed": o.speed
+                }
+                # Block magasság is kell
+                if o.type == "block":
+                    obs["h"] = o.h
+                obstacles_data.append(obs)
+            msg["obstacles"] = obstacles_data
+            msg["score"] = score
+            msg["current_speed"] = current_speed
+        
+        network.send_data(msg)
 
     # ================= GAME LOGIC =================
     if state == "play":
@@ -841,20 +906,43 @@ while running:
                 if score > high_score: high_score = score
                 save_scores(high_score, max_speed_record)
 
-        # Obstacle spawn — csak HOST-on (MP) vagy egyj.
-        if not multiplayer_mode or network.is_host:
+        # Obstacle spawn
+        if not multiplayer_mode:
+            # SINGLEPLAYER
+            spawn += 1
+            spawn_rate = max(40, 70 - int(score * 0.5))
+            if spawn > spawn_rate:
+                obstacles.append(Obstacle(current_speed))
+                spawn = 0
+        elif network.is_host:
+            # MULTIPLAYER HOST
             spawn += 1
             spawn_rate = max(40, 70 - int(score * 0.5))
             if spawn > spawn_rate:
                 obstacles.append(Obstacle(current_speed))
                 spawn = 0
 
-        for o in obstacles[:]:
-            o.update()
-            if o.off():
-                obstacles.remove(o)
-                score += 1
-                play_score_sound()
+        # Obstacle update + score
+        if not multiplayer_mode:
+            # SINGLEPLAYER
+            for o in obstacles[:]:
+                o.update()
+                if o.off():
+                    obstacles.remove(o)
+                    score += 1
+                    play_score_sound()
+        elif network.is_host:
+            # MULTIPLAYER HOST
+            for o in obstacles[:]:
+                o.update()
+                if o.off():
+                    obstacles.remove(o)
+                    score += 1
+                    play_score_sound()
+        else:
+            # MULTIPLAYER CLIENT: csak update (obstacles sync-et a network-ről kapja)
+            for o in obstacles:
+                o.update()
 
     # ================= DRAW =================
     parallax_bg()
