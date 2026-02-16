@@ -1,4 +1,8 @@
-import pygame, random, sys, os, json
+import pygame
+import random
+import sys
+import os
+import json
 import socket
 import threading
 import pickle
@@ -17,19 +21,28 @@ BUFFER_SIZE = 65536
 SETTINGS_FILE = "settings.json"
 
 def load_settings():
-    default_settings = {"fullscreen": True, "music_volume": 0.5, "sfx_volume": 0.5, "skin_index": 0}
+    default_settings = {
+        "fullscreen": True,
+        "music_volume": 0.5,
+        "sfx_volume": 0.5,
+        "skin_index": 0
+    }
     try:
         with open(SETTINGS_FILE, "r") as f:
             settings = json.load(f)
             for key in default_settings:
-                if key not in settings: settings[key] = default_settings[key]
+                if key not in settings:
+                    settings[key] = default_settings[key]
             return settings
-    except: return default_settings
+    except:
+        return default_settings
 
 def save_settings(settings):
     try:
-        with open(SETTINGS_FILE, "w") as f: json.dump(settings, f, indent=4)
-    except: pass
+        with open(SETTINGS_FILE, "w") as f:
+            json.dump(settings, f, indent=4)
+    except:
+        pass
 
 settings = load_settings()
 fullscreen_enabled = settings["fullscreen"]
@@ -37,6 +50,7 @@ music_volume = settings["music_volume"]
 sfx_volume = settings["sfx_volume"]
 skin_index = settings["skin_index"]
 
+# ================= FULLSCREEN SETTING =================
 if fullscreen_enabled:
     screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
     WIDTH, HEIGHT = screen.get_size()
@@ -47,10 +61,18 @@ pygame.display.set_caption("Geometry Dash PRO")
 clock = pygame.time.Clock()
 
 # ================= COLORS =================
-WHITE=(255,255,255); BLACK=(0,0,0); BLUE=(0,150,255)
-RED=(255,50,50); GREEN=(50,255,50); PURPLE=(200,50,255)
-YELLOW=(255,255,0); GRAY=(100,100,100); ORANGE=(255,165,0)
-CYAN=(0,255,255); PINK=(255,105,180)
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
+BLUE = (0, 150, 255)
+RED = (255, 50, 50)
+GREEN = (50, 255, 50)
+PURPLE = (200, 50, 255)
+YELLOW = (255, 255, 0)
+GRAY = (100, 100, 100)
+ORANGE = (255, 165, 0)
+CYAN = (0, 255, 255)
+PINK = (255, 105, 180)
+DARK_GRAY = (50, 50, 50)
 
 # ================= SETTINGS =================
 GROUND_Y = HEIGHT - 100
@@ -60,105 +82,185 @@ BASE_SPEED = 7
 MAX_SPEED = 15
 SPEED_INCREASE_RATE = 0.05
 
-# ================= FILES =================
+# ================= HIGHSCORE & MAX SPEED FILE =================
 SCORES_FILE = "scores.json"
 
 def load_scores():
+    default_scores = {"high_score": 0, "max_speed": BASE_SPEED}
     try:
-        with open(SCORES_FILE, "r") as f: return json.load(f)
-    except: return {"high_score": 0, "max_speed": BASE_SPEED}
+        with open(SCORES_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return default_scores
 
 def save_scores(hs, ms):
     try:
-        with open(SCORES_FILE, "w") as f: json.dump({"high_score": hs, "max_speed": ms}, f, indent=4)
-    except: pass
+        with open(SCORES_FILE, "w") as f:
+            json.dump({"high_score": hs, "max_speed": ms}, f, indent=4)
+    except:
+        pass
 
 scores = load_scores()
 high_score = scores["high_score"]
 max_speed_record = scores["max_speed"]
 
-SKINS = [(0,150,255),(255,255,0),(255,0,255),(0,255,255),(255,0,0),(0,255,0)]
-stars = [[random.randint(0,WIDTH), random.randint(0,HEIGHT), random.randint(1,3)] for _ in range(200)]
+# ================= PLAYER SKINS =================
+SKINS = [
+    (0, 150, 255),
+    (255, 255, 0),
+    (255, 0, 255),
+    (0, 255, 255),
+    (255, 0, 0),
+    (0, 255, 0)
+]
 
-# ================= SOUND =================
-jump_sound = death_sound = score_sound = None
+# ================= PARALLAX BG =================
+stars = [[random.randint(0, WIDTH), random.randint(0, HEIGHT), random.randint(1, 3)] for _ in range(200)]
+
+# ================= SOUND EFFECTS =================
+jump_sound = None
+death_sound = None
+score_sound = None
 
 def load_sounds():
     global jump_sound, death_sound, score_sound
-    try: jump_sound = pygame.mixer.Sound("jump.wav"); jump_sound.set_volume(sfx_volume)
-    except: pass
-    try: death_sound = pygame.mixer.Sound("death.wav"); death_sound.set_volume(sfx_volume)
-    except: pass
-    try: score_sound = pygame.mixer.Sound("score.wav"); score_sound.set_volume(sfx_volume)
-    except: pass
+    try:
+        jump_sound = pygame.mixer.Sound("jump.wav")
+        jump_sound.set_volume(sfx_volume)
+    except:
+        jump_sound = None
+    try:
+        death_sound = pygame.mixer.Sound("death.wav")
+        death_sound.set_volume(sfx_volume)
+    except:
+        death_sound = None
+    try:
+        score_sound = pygame.mixer.Sound("score.wav")
+        score_sound.set_volume(sfx_volume)
+    except:
+        score_sound = None
 
 def update_sfx_volume():
-    if jump_sound: jump_sound.set_volume(sfx_volume)
-    if death_sound: death_sound.set_volume(sfx_volume)
-    if score_sound: score_sound.set_volume(sfx_volume)
+    if jump_sound:
+        jump_sound.set_volume(sfx_volume)
+    if death_sound:
+        death_sound.set_volume(sfx_volume)
+    if score_sound:
+        score_sound.set_volume(sfx_volume)
 
 def play_jump_sound():
-    if jump_sound: jump_sound.play()
+    if jump_sound:
+        jump_sound.play()
+
 def play_death_sound():
-    if death_sound: death_sound.play()
+    if death_sound:
+        death_sound.play()
+
 def play_score_sound():
-    if score_sound: score_sound.play()
+    if score_sound:
+        score_sound.play()
 
 load_sounds()
 
+# ================= MUSIC CONTROL =================
 def play_menu_music():
-    try: pygame.mixer.music.load("menumusic.mp3"); pygame.mixer.music.set_volume(music_volume); pygame.mixer.music.play(-1)
-    except: pass
+    try:
+        pygame.mixer.music.load("menumusic.mp3")
+        pygame.mixer.music.set_volume(music_volume)
+        pygame.mixer.music.play(-1)
+    except:
+        pass
 
 def play_game_music():
-    try: pygame.mixer.music.load("background.mp3"); pygame.mixer.music.set_volume(music_volume); pygame.mixer.music.play(-1)
-    except: pass
+    try:
+        pygame.mixer.music.load("background.mp3")
+        pygame.mixer.music.set_volume(music_volume)
+        pygame.mixer.music.play(-1)
+    except:
+        pass
 
-def update_music_volume(): pygame.mixer.music.set_volume(music_volume)
+def update_music_volume():
+    pygame.mixer.music.set_volume(music_volume)
 
 def toggle_fullscreen():
     global screen, WIDTH, HEIGHT, fullscreen_enabled, GROUND_Y
     fullscreen_enabled = not fullscreen_enabled
-    if fullscreen_enabled: screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN); WIDTH, HEIGHT = screen.get_size()
-    else: WIDTH, HEIGHT = 1000, 600; screen = pygame.display.set_mode((WIDTH, HEIGHT))
+    if fullscreen_enabled:
+        screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+        WIDTH, HEIGHT = screen.get_size()
+    else:
+        WIDTH, HEIGHT = 1000, 600
+        screen = pygame.display.set_mode((WIDTH, HEIGHT))
     GROUND_Y = HEIGHT - 100
-    save_settings({"fullscreen": fullscreen_enabled, "music_volume": music_volume, "sfx_volume": sfx_volume, "skin_index": skin_index})
+    save_settings({
+        "fullscreen": fullscreen_enabled,
+        "music_volume": music_volume,
+        "sfx_volume": sfx_volume,
+        "skin_index": skin_index
+    })
 
 def get_local_ip():
-    try: s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.connect(("8.8.8.8", 80)); ip = s.getsockname()[0]; s.close(); return ip
-    except: return "127.0.0.1"
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except:
+        return "127.0.0.1"
 
 def is_valid_ip(ip_string):
     try:
         parts = ip_string.split('.')
-        if len(parts) != 4: return False
-        return all(0 <= int(p) <= 255 for p in parts)
-    except: return False
+        if len(parts) != 4:
+            return False
+        for part in parts:
+            num = int(part)
+            if num < 0 or num > 255:
+                return False
+        return True
+    except:
+        return False
 
-# ================= BUTTON CLASS =================
-class Button:
-    def __init__(self, x, y, width, height, text, color, hover_color, text_color=WHITE):
-        self.rect = pygame.Rect(x, y, width, height)
+# ================= TEXT BUTTON CLASS - FIXED VERSION =================
+class TextButton:
+    def __init__(self, x, y, text, normal_color=WHITE, hover_color=YELLOW):
         self.text = text
-        self.color = color
+        self.normal_color = normal_color
         self.hover_color = hover_color
-        self.text_color = text_color
+        self.x = x
+        self.y = y
         self.hovered = False
-    
-    def draw(self, font):
-        color = self.hover_color if self.hovered else self.color
-        pygame.draw.rect(screen, color, self.rect)
-        pygame.draw.rect(screen, WHITE, self.rect, 3)
-        text_surf = font.render(self.text, True, self.text_color)
-        screen.blit(text_surf, text_surf.get_rect(center=self.rect.center))
+        # Initialize rect with approximate size
+        temp_font = pygame.font.Font(None, 50)
+        temp_surf = temp_font.render(text, True, WHITE)
+        self.rect = temp_surf.get_rect(center=(x, y))
     
     def update(self, mouse_pos):
+        # Update hover state based on current rect
         self.hovered = self.rect.collidepoint(mouse_pos)
+    
+    def draw(self, font):
+        color = self.hover_color if self.hovered else self.normal_color
+        
+        if self.hovered:
+            # Hover: arrows and bigger text
+            display_text = f"> {self.text} <"
+            bigger_size = int(font.get_height() * 1.3)
+            bigger_font = pygame.font.Font(None, bigger_size)
+            text_surf = bigger_font.render(display_text, True, color)
+        else:
+            # Normal
+            text_surf = font.render(self.text, True, color)
+        
+        # Update rect for next frame
+        self.rect = text_surf.get_rect(center=(self.x, self.y))
+        screen.blit(text_surf, self.rect)
     
     def is_clicked(self, mouse_pos, mouse_pressed):
         return self.rect.collidepoint(mouse_pos) and mouse_pressed[0]
 
-# ================= SLIDER =================
+# ================= SLIDER CLASS =================
 class Slider:
     def __init__(self, x, y, width, height, min_val, max_val, start_val):
         self.rect = pygame.Rect(x, y, width, height)
@@ -169,31 +271,41 @@ class Slider:
         self.handle_radius = height
     
     def draw(self, font_small):
-        pygame.draw.rect(screen, GRAY, self.rect, 3)
+        # Track
+        pygame.draw.line(screen, GRAY, (self.rect.x, self.rect.centery), (self.rect.right, self.rect.centery), 2)
+        # Fill
         fill_width = int((self.value - self.min_val) / (self.max_val - self.min_val) * self.rect.width)
-        pygame.draw.rect(screen, GREEN, (self.rect.x, self.rect.y, fill_width, self.rect.height))
+        pygame.draw.line(screen, WHITE, (self.rect.x, self.rect.centery), (self.rect.x + fill_width, self.rect.centery), 4)
+        # Handle
         handle_x = self.rect.x + fill_width
-        pygame.draw.circle(screen, YELLOW, (handle_x, self.rect.centery), self.handle_radius)
-        screen.blit(font_small.render(f"{int(self.value * 100)}%", True, WHITE), (self.rect.right + 10, self.rect.y))
+        pygame.draw.circle(screen, YELLOW if self.dragging else WHITE, (handle_x, self.rect.centery), 8)
+        # Value text
+        val_text = font_small.render(f"{int(self.value * 100)}%", True, WHITE)
+        screen.blit(val_text, (self.rect.right + 10, self.rect.y))
     
     def update(self, mouse_pos, mouse_pressed):
         handle_x = self.rect.x + int((self.value - self.min_val) / (self.max_val - self.min_val) * self.rect.width)
-        handle_rect = pygame.Rect(handle_x - self.handle_radius, self.rect.centery - self.handle_radius, self.handle_radius * 2, self.handle_radius * 2)
+        handle_rect = pygame.Rect(handle_x - self.handle_radius, self.rect.centery - self.handle_radius,
+                                   self.handle_radius * 2, self.handle_radius * 2)
         
         if mouse_pressed[0]:
             if handle_rect.collidepoint(mouse_pos) or self.dragging:
                 self.dragging = True
+                # Calculate new value
                 rel_x = max(0, min(mouse_pos[0] - self.rect.x, self.rect.width))
                 self.value = self.min_val + (rel_x / self.rect.width) * (self.max_val - self.min_val)
                 self.value = max(self.min_val, min(self.max_val, self.value))
         else:
             self.dragging = False
 
-# ================= NETWORK =================
+# ================= NETWORK CLASS =================
 class NetworkManager:
     def __init__(self):
-        self.socket = self.client_socket = None
-        self.connected = self.is_host = self.running = False
+        self.socket = None
+        self.connected = False
+        self.is_host = False
+        self.client_socket = None
+        self.running = False
         self.connection_error = None
         self.message_queue = []
         self.queue_lock = threading.Lock()
@@ -204,7 +316,8 @@ class NetworkManager:
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.socket.bind((HOST, PORT))
             self.socket.listen(1)
-            self.is_host = self.running = True
+            self.is_host = True
+            self.running = True
             threading.Thread(target=self._wait_for_connection, daemon=True).start()
             return True
         except Exception as e:
@@ -213,8 +326,10 @@ class NetworkManager:
 
     def _wait_for_connection(self):
         try:
+            self.socket.settimeout(None)
             self.client_socket, addr = self.socket.accept()
             self.connected = True
+            print(f"Client connected: {addr}")
             threading.Thread(target=self._receive_loop, daemon=True).start()
         except Exception as e:
             self.connection_error = str(e)
@@ -229,7 +344,8 @@ class NetworkManager:
             self.socket.connect((host_ip, PORT))
             self.socket.settimeout(None)
             self.is_host = False
-            self.connected = self.running = True
+            self.connected = True
+            self.running = True
             self.connection_error = None
             threading.Thread(target=self._receive_loop, daemon=True).start()
             return True
@@ -239,23 +355,29 @@ class NetworkManager:
 
     def _send_msg(self, sock, data):
         payload = pickle.dumps(data)
-        sock.sendall(len(payload).to_bytes(4, 'big') + payload)
+        length = len(payload).to_bytes(4, 'big')
+        sock.sendall(length + payload)
 
     def _recv_msg(self, sock):
         raw_len = self._recv_exact(sock, 4)
-        if raw_len is None: return None
+        if raw_len is None:
+            return None
         msg_len = int.from_bytes(raw_len, 'big')
         raw_data = self._recv_exact(sock, msg_len)
-        return pickle.loads(raw_data) if raw_data else None
+        if raw_data is None:
+            return None
+        return pickle.loads(raw_data)
 
     def _recv_exact(self, sock, n):
         data = b''
         while len(data) < n:
             try:
                 chunk = sock.recv(n - len(data))
-                if not chunk: return None
+                if not chunk:
+                    return None
                 data += chunk
-            except: return None
+            except:
+                return None
         return data
 
     def _receive_loop(self):
@@ -269,9 +391,11 @@ class NetworkManager:
                 self.message_queue.append(msg)
 
     def send_data(self, data):
-        if not self.connected: return
+        if not self.connected:
+            return
         try:
-            self._send_msg(self.client_socket if self.is_host else self.socket, data)
+            sock = self.client_socket if self.is_host else self.socket
+            self._send_msg(sock, data)
         except:
             self.connected = False
 
@@ -282,11 +406,15 @@ class NetworkManager:
         return msgs
 
     def close(self):
-        self.running = self.connected = False
+        self.running = False
+        self.connected = False
         try:
-            if self.client_socket: self.client_socket.close()
-            if self.socket: self.socket.close()
-        except: pass
+            if self.client_socket:
+                self.client_socket.close()
+            if self.socket:
+                self.socket.close()
+        except:
+            pass
         self.message_queue.clear()
 
 # ================= PLAYER =================
@@ -311,10 +439,14 @@ class Player:
             play_jump_sound()
 
     def update(self, obstacles):
-        if self.dead: return
-        if self.jump_cooldown > 0: self.jump_cooldown -= 1
-        
-        old_y, old_x = self.y, self.x
+        if self.dead:
+            return
+        if self.jump_cooldown > 0:
+            self.jump_cooldown -= 1
+
+        old_y = self.y
+        old_x = self.x
+
         self.vy += GRAVITY
         self.y += self.vy
 
@@ -330,107 +462,210 @@ class Player:
             if o.type in ["block", "moving_block", "narrow_block", "gap_block"]:
                 h_overlap = (self.x + self.size > o.x) and (self.x < o.x + o.w)
                 v_overlap = (self.y + self.size > o.y) and (self.y < o.y + o.h)
+
                 if h_overlap and v_overlap:
                     if self.vy > 0 and old_y + self.size <= o.y + 5:
-                        self.y = o.y - self.size; self.vy = 0; self.can_jump = True; self.rot = 0
-                    else: self.dead = True
+                        self.y = o.y - self.size
+                        self.vy = 0
+                        self.can_jump = True
+                        self.rot = 0
+                    elif self.vy < 0 and old_y >= o.y + o.h - 5:
+                        self.dead = True
+                    elif old_x + self.size <= o.x + 5 or old_x >= o.x + o.w - 5:
+                        self.dead = True
+                    else:
+                        self.dead = True
 
         self.trail.append((self.x, self.y))
-        if len(self.trail) > 15: self.trail.pop(0)
+        if len(self.trail) > 15:
+            self.trail.pop(0)
 
     def draw(self, is_other=False):
         for i, pos in enumerate(self.trail):
+            alpha = int(i * 12)
             surf = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
             pygame.draw.rect(surf, SKINS[self.skin], (0, 0, self.size, self.size))
-            surf.set_alpha(int(i * 12))
+            surf.set_alpha(alpha)
             screen.blit(surf, pos)
+
         surf = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
         pygame.draw.rect(surf, SKINS[self.skin], (0, 0, self.size, self.size))
-        pygame.draw.rect(surf, CYAN if is_other else WHITE, (0, 0, self.size, self.size), 2)
-        rot = pygame.transform.rotate(surf, self.rot)
-        screen.blit(rot, rot.get_rect(center=(self.x + self.size // 2, self.y + self.size // 2)))
+        border = CYAN if is_other else WHITE
+        pygame.draw.rect(surf, border, (0, 0, self.size, self.size), 2)
 
-    def rect(self): return pygame.Rect(self.x, self.y, self.size, self.size)
-    def get_data(self): return {'x': self.x, 'y': self.y, 'vy': self.vy, 'rot': self.rot, 'dead': self.dead, 'skin': self.skin, 'trail': self.trail[-5:]}
+        rot = pygame.transform.rotate(surf, self.rot)
+        rect = rot.get_rect(center=(self.x + self.size // 2, self.y + self.size // 2))
+        screen.blit(rot, rect)
+
+    def rect(self):
+        return pygame.Rect(self.x, self.y, self.size, self.size)
+
+    def get_data(self):
+        return {
+            'x': self.x,
+            'y': self.y,
+            'vy': self.vy,
+            'rot': self.rot,
+            'dead': self.dead,
+            'skin': self.skin,
+            'trail': self.trail[-5:]
+        }
+
     def set_data(self, data):
         if data:
-            self.x = data.get('x', self.x); self.y = data.get('y', self.y); self.vy = data.get('vy', self.vy)
-            self.rot = data.get('rot', self.rot); self.dead = data.get('dead', self.dead); self.skin = data.get('skin', self.skin)
-            if 'trail' in data: self.trail = data['trail']
+            self.x = data.get('x', self.x)
+            self.y = data.get('y', self.y)
+            self.vy = data.get('vy', self.vy)
+            self.rot = data.get('rot', self.rot)
+            self.dead = data.get('dead', self.dead)
+            self.skin = data.get('skin', self.skin)
+            if 'trail' in data:
+                self.trail = data['trail']
 
 # ================= OBSTACLE =================
 class Obstacle:
     _next_id = 0
     
     def __init__(self, current_speed, obs_type=None, obs_h=None):
-        self.id = Obstacle._next_id; Obstacle._next_id += 1; self.speed = current_speed
+        self.id = Obstacle._next_id
+        Obstacle._next_id += 1
         
-        if obs_type: self.type = obs_type
+        self.speed = current_speed
+
+        if obs_type:
+            self.type = obs_type
         else:
             rand = random.randint(1, 100)
-            if rand <= 25: self.type = "spike"
-            elif rand <= 45: self.type = "block"
-            elif rand <= 60: self.type = "double_spike"
-            elif rand <= 70: self.type = "moving_block"
-            elif rand <= 80: self.type = "tall_spike"
-            elif rand <= 90: self.type = "triple_spike"
-            elif rand <= 95: self.type = "narrow_block"
-            else: self.type = "gap_block"
-        
+            if rand <= 25:
+                self.type = "spike"
+            elif rand <= 45:
+                self.type = "block"
+            elif rand <= 60:
+                self.type = "double_spike"
+            elif rand <= 70:
+                self.type = "moving_block"
+            elif rand <= 80:
+                self.type = "tall_spike"
+            elif rand <= 90:
+                self.type = "triple_spike"
+            elif rand <= 95:
+                self.type = "narrow_block"
+            else:
+                self.type = "gap_block"
+
         self.x = WIDTH
-        
-        if self.type == "spike": self.w = self.h = 35; self.color = RED; self.y = GROUND_Y - self.h
-        elif self.type == "double_spike": self.w = 70; self.h = 35; self.color = RED; self.y = GROUND_Y - self.h
-        elif self.type == "triple_spike": self.w = 105; self.h = 35; self.color = RED; self.y = GROUND_Y - self.h
-        elif self.type == "tall_spike": self.w = 35; self.h = 60; self.color = ORANGE; self.y = GROUND_Y - self.h
-        elif self.type == "block": self.w = 40; self.h = obs_h if obs_h else random.choice([80, 120]); self.color = PURPLE; self.y = GROUND_Y - self.h
-        elif self.type == "narrow_block": self.w = 25; self.h = 100; self.color = PINK; self.y = GROUND_Y - self.h
-        elif self.type == "gap_block": self.w = 40; self.h = 90; self.color = PURPLE; self.y = GROUND_Y - self.h; self.gap_width = 80; self.has_second = True
-        elif self.type == "moving_block": self.w = 40; self.h = 100; self.color = CYAN; self.y = GROUND_Y - self.h; self.move_range = 80; self.move_speed = 4; self.move_dir = 1; self.start_y = self.y
+
+        if self.type == "spike":
+            self.w = self.h = 35
+            self.color = RED
+            self.y = GROUND_Y - self.h
+        elif self.type == "double_spike":
+            self.w = 70
+            self.h = 35
+            self.color = RED
+            self.y = GROUND_Y - self.h
+        elif self.type == "triple_spike":
+            self.w = 105
+            self.h = 35
+            self.color = RED
+            self.y = GROUND_Y - self.h
+        elif self.type == "tall_spike":
+            self.w = 35
+            self.h = 60
+            self.color = ORANGE
+            self.y = GROUND_Y - self.h
+        elif self.type == "block":
+            self.w = 40
+            self.h = obs_h if obs_h else random.choice([80, 120])
+            self.color = PURPLE
+            self.y = GROUND_Y - self.h
+        elif self.type == "narrow_block":
+            self.w = 25
+            self.h = 100
+            self.color = PINK
+            self.y = GROUND_Y - self.h
+        elif self.type == "gap_block":
+            self.w = 40
+            self.h = 90
+            self.color = PURPLE
+            self.y = GROUND_Y - self.h
+            self.gap_width = 80
+            self.has_second = True
+        elif self.type == "moving_block":
+            self.w = 40
+            self.h = 100
+            self.color = CYAN
+            self.y = GROUND_Y - self.h
+            self.move_range = 80
+            self.move_speed = 4
+            self.move_dir = 1
+            self.start_y = self.y
 
     def update(self):
         self.x -= self.speed
         if self.type == "moving_block":
             self.y += self.move_speed * self.move_dir
-            if self.y <= self.start_y - self.move_range: self.move_dir = 1
-            elif self.y >= self.start_y: self.move_dir = -1
+            if self.y <= self.start_y - self.move_range:
+                self.move_dir = 1
+            elif self.y >= self.start_y:
+                self.move_dir = -1
 
     def draw(self):
-        if self.type in ["spike", "tall_spike"]:
-            pts = [(self.x+self.w//2, self.y), (self.x, self.y+self.h), (self.x+self.w, self.y+self.h)]
-            pygame.draw.polygon(screen, self.color, pts); pygame.draw.polygon(screen, WHITE, pts, 2)
+        if self.type == "spike":
+            pts = [(self.x + self.w // 2, self.y), (self.x, self.y + self.h), (self.x + self.w, self.y + self.h)]
+            pygame.draw.polygon(screen, self.color, pts)
+            pygame.draw.polygon(screen, WHITE, pts, 2)
         elif self.type == "double_spike":
             for i in range(2):
-                off = i*35; pts = [(self.x+off+17, self.y), (self.x+off, self.y+self.h), (self.x+off+35, self.y+self.h)]
-                pygame.draw.polygon(screen, self.color, pts); pygame.draw.polygon(screen, WHITE, pts, 2)
+                off = i * 35
+                pts = [(self.x + off + 17, self.y), (self.x + off, self.y + self.h), (self.x + off + 35, self.y + self.h)]
+                pygame.draw.polygon(screen, self.color, pts)
+                pygame.draw.polygon(screen, WHITE, pts, 2)
         elif self.type == "triple_spike":
             for i in range(3):
-                off = i*35; pts = [(self.x+off+17, self.y), (self.x+off, self.y+self.h), (self.x+off+35, self.y+self.h)]
-                pygame.draw.polygon(screen, self.color, pts); pygame.draw.polygon(screen, WHITE, pts, 2)
-        elif self.type in ["block", "narrow_block", "moving_block"]:
+                off = i * 35
+                pts = [(self.x + off + 17, self.y), (self.x + off, self.y + self.h), (self.x + off + 35, self.y + self.h)]
+                pygame.draw.polygon(screen, self.color, pts)
+                pygame.draw.polygon(screen, WHITE, pts, 2)
+        elif self.type == "tall_spike":
+            pts = [(self.x + self.w // 2, self.y), (self.x, self.y + self.h), (self.x + self.w, self.y + self.h)]
+            pygame.draw.polygon(screen, self.color, pts)
+            pygame.draw.polygon(screen, WHITE, pts, 2)
+        elif self.type in ["block", "narrow_block"]:
             pygame.draw.rect(screen, self.color, (self.x, self.y, self.w, self.h))
-            pygame.draw.line(screen, YELLOW, (self.x, self.y), (self.x+self.w, self.y), 4)
+            pygame.draw.line(screen, YELLOW, (self.x, self.y), (self.x + self.w, self.y), 4)
             pygame.draw.rect(screen, WHITE, (self.x, self.y, self.w, self.h), 2)
-            if self.type == "narrow_block": pygame.draw.circle(screen, YELLOW, (int(self.x+self.w//2), int(self.y+self.h//2)), 3)
-            elif self.type == "moving_block": pygame.draw.circle(screen, WHITE, (int(self.x+self.w//2), int(self.y+self.h//2)), 5)
+            if self.type == "narrow_block":
+                pygame.draw.circle(screen, YELLOW, (int(self.x + self.w // 2), int(self.y + self.h // 2)), 3)
         elif self.type == "gap_block":
             pygame.draw.rect(screen, self.color, (self.x, self.y, self.w, self.h))
-            pygame.draw.line(screen, YELLOW, (self.x, self.y), (self.x+self.w, self.y), 4)
+            pygame.draw.line(screen, YELLOW, (self.x, self.y), (self.x + self.w, self.y), 4)
             pygame.draw.rect(screen, WHITE, (self.x, self.y, self.w, self.h), 2)
             if self.has_second:
                 x2 = self.x + self.w + self.gap_width
                 pygame.draw.rect(screen, self.color, (x2, self.y, self.w, self.h))
-                pygame.draw.line(screen, YELLOW, (x2, self.y), (x2+self.w, self.y), 4)
+                pygame.draw.line(screen, YELLOW, (x2, self.y), (x2 + self.w, self.y), 4)
                 pygame.draw.rect(screen, WHITE, (x2, self.y, self.w, self.h), 2)
+        elif self.type == "moving_block":
+            pygame.draw.rect(screen, self.color, (self.x, self.y, self.w, self.h))
+            pygame.draw.line(screen, YELLOW, (self.x, self.y), (self.x + self.w, self.y), 4)
+            pygame.draw.rect(screen, WHITE, (self.x, self.y, self.w, self.h), 2)
+            pygame.draw.circle(screen, WHITE, (int(self.x + self.w // 2), int(self.y + self.h // 2)), 5)
 
-    def rect(self): return pygame.Rect(self.x, self.y, self.w, self.h)
-    def off(self): return (self.x + self.w + self.gap_width + self.w < 0) if self.type == "gap_block" else (self.x + self.w < 0)
+    def rect(self):
+        return pygame.Rect(self.x, self.y, self.w, self.h)
+
+    def off(self):
+        if self.type == "gap_block":
+            return self.x + self.w + self.gap_width + self.w < 0
+        return self.x + self.w < 0
 
 # ================= GAME STATE =================
 player = Player(player_skin=skin_index)
 other_player = Player(x=150, player_skin=0)
 obstacles = []
-spawn = score = 0
+spawn = 0
+score = 0
 current_speed = BASE_SPEED
 last_game_speed = BASE_SPEED
 state = "menu"
@@ -439,322 +674,506 @@ multiplayer_mode = False
 mp_result = None
 
 font_big = pygame.font.Font(None, 80)
-font_med = pygame.font.Font(None, 40)
+font_med = pygame.font.Font(None, 50)
 font_small = pygame.font.Font(None, 30)
 font_huge = pygame.font.Font(None, 120)
 
+# ================= INPUT STATE =================
 input_text = ""
 input_active = False
 error_message = ""
 error_message_timer = 0
 
+# ================= FUNCTIONS =================
 def reset():
     global player, other_player, obstacles, spawn, score, current_speed, mp_result
-    player = Player(player_skin=skin_index); other_player = Player(x=150, player_skin=0)
-    obstacles = []; spawn = score = 0; current_speed = BASE_SPEED; mp_result = None
+    player = Player(player_skin=skin_index)
+    other_player = Player(x=150, player_skin=0)
+    obstacles = []
+    spawn = 0
+    score = 0
+    current_speed = BASE_SPEED
+    mp_result = None
 
 def parallax_bg():
     screen.fill((10, 10, 30))
     for s in stars:
         s[0] -= s[2] * (current_speed / BASE_SPEED)
-        if s[0] < 0: s[0] = WIDTH
+        if s[0] < 0:
+            s[0] = WIDTH
         pygame.draw.circle(screen, WHITE, (s[0], s[1]), s[2])
 
 def draw_ground():
-    pygame.draw.rect(screen, (40,40,40), (0, GROUND_Y, WIDTH, HEIGHT))
+    pygame.draw.rect(screen, (40, 40, 40), (0, GROUND_Y, WIDTH, HEIGHT))
     pygame.draw.line(screen, YELLOW, (0, GROUND_Y), (WIDTH, GROUND_Y), 4)
 
 def get_speed_color_for_value(sv):
     r = (sv - BASE_SPEED) / (MAX_SPEED - BASE_SPEED)
-    return GREEN if r < 0.33 else YELLOW if r < 0.66 else RED
+    if r < 0.33:
+        return GREEN
+    elif r < 0.66:
+        return YELLOW
+    else:
+        return RED
 
-def get_speed_color(): return get_speed_color_for_value(current_speed)
+def get_speed_color():
+    return get_speed_color_for_value(current_speed)
 
 def show_error(msg):
     global error_message, error_message_timer
-    error_message, error_message_timer = msg, 180
+    error_message = msg
+    error_message_timer = 180
 
 def trigger_game_over(result):
     global state, last_game_speed, max_speed_record, high_score, mp_result
-    if mp_result is not None: return
-    mp_result = result; state = "over"; pygame.mixer.music.stop(); play_death_sound(); last_game_speed = current_speed
-    if current_speed > max_speed_record: max_speed_record = current_speed
-    if score > high_score: high_score = score
+    if mp_result is not None:
+        return
+    mp_result = result
+    state = "over"
+    pygame.mixer.music.stop()
+    play_death_sound()
+    last_game_speed = current_speed
+    if current_speed > max_speed_record:
+        max_speed_record = current_speed
+    if score > high_score:
+        high_score = score
     save_scores(high_score, max_speed_record)
 
+# ================= START MENU MUSIC =================
 play_menu_music()
 
+# ================= MAIN LOOP =================
 running = True
 
 while running:
     clock.tick(FPS)
+    
     mouse_pos = pygame.mouse.get_pos()
     mouse_pressed = pygame.mouse.get_pressed()
 
     if error_message_timer > 0:
         error_message_timer -= 1
-        if error_message_timer == 0: error_message = ""
+        if error_message_timer == 0:
+            error_message = ""
 
-    # ================= NETWORK =================
+    # ================= NETWORK MESSAGE PROCESSING =================
     if multiplayer_mode and network.connected:
-        for msg in network.get_messages():
-            if not isinstance(msg, dict): continue
-            msg_type = msg.get("type")
-            
-            if msg_type == "start" and not network.is_host and state == "waiting":
-                state = "play"; reset(); play_game_music()
-            elif msg_type == "game_over" and msg.get("result") in ("win", "lose"):
-                trigger_game_over(msg["result"])
-            elif msg_type == "player_data" and state == "play":
-                other_player.set_data(msg.get("data"))
-                if not network.is_host and "obstacles" in msg:
-                    obstacles.clear()
-                    for obs_data in msg["obstacles"]:
-                        new_obs = object.__new__(Obstacle)
-                        new_obs.id = obs_data["id"]; new_obs.type = obs_data["type"]
-                        new_obs.x = obs_data["x"]; new_obs.y = obs_data["y"]
-                        new_obs.w = obs_data["w"]; new_obs.h = obs_data["h"]
-                        new_obs.speed = obs_data["speed"]; new_obs.color = tuple(obs_data["color"])
-                        if new_obs.type == "moving_block":
-                            new_obs.start_y = obs_data.get("start_y", new_obs.y)
-                            new_obs.move_range = obs_data.get("move_range", 80)
-                            new_obs.move_speed = obs_data.get("move_speed", 4)
-                            new_obs.move_dir = obs_data.get("move_dir", 1)
-                        if new_obs.type == "gap_block":
-                            new_obs.gap_width = obs_data.get("gap_width", 80)
-                            new_obs.has_second = obs_data.get("has_second", True)
-                        obstacles.append(new_obs)
-                    if "score" in msg: globals()["score"] = msg["score"]
-                    if "current_speed" in msg: globals()["current_speed"] = msg["current_speed"]
+        messages = network.get_messages()
+        for msg in messages:
+            if not isinstance(msg, dict):
+                continue
 
-    # ================= EVENTS =================
+            msg_type = msg.get("type")
+
+            if msg_type == "start" and not network.is_host:
+                if state == "waiting":
+                    state = "play"
+                    reset()
+                    play_game_music()
+
+            elif msg_type == "game_over":
+                result = msg.get("result")
+                if result in ("win", "lose"):
+                    trigger_game_over(result)
+
+            elif msg_type == "player_data":
+                if state == "play":
+                    other_player.set_data(msg.get("data"))
+                    
+                    if not network.is_host and "obstacles" in msg:
+                        obstacles_data = msg["obstacles"]
+                        
+                        obstacles.clear()
+                        
+                        for obs_data in obstacles_data:
+                            new_obs = object.__new__(Obstacle)
+                            
+                            new_obs.id = obs_data["id"]
+                            new_obs.type = obs_data["type"]
+                            new_obs.x = obs_data["x"]
+                            new_obs.y = obs_data["y"]
+                            new_obs.w = obs_data["w"]
+                            new_obs.h = obs_data["h"]
+                            new_obs.speed = obs_data["speed"]
+                            new_obs.color = tuple(obs_data["color"])
+                            
+                            if new_obs.type == "moving_block":
+                                new_obs.start_y = obs_data.get("start_y", new_obs.y)
+                                new_obs.move_range = obs_data.get("move_range", 80)
+                                new_obs.move_speed = obs_data.get("move_speed", 4)
+                                new_obs.move_dir = obs_data.get("move_dir", 1)
+                            
+                            if new_obs.type == "gap_block":
+                                new_obs.gap_width = obs_data.get("gap_width", 80)
+                                new_obs.has_second = obs_data.get("has_second", True)
+                            
+                            obstacles.append(new_obs)
+                        
+                        if "score" in msg:
+                            globals()["score"] = msg["score"]
+                        if "current_speed" in msg:
+                            globals()["current_speed"] = msg["current_speed"]
+
+    # ================= EVENTS (IP INPUT ONLY) =================
     for e in pygame.event.get():
         if e.type == pygame.QUIT:
-            running = False; network.close()
+            running = False
+            network.close()
         if e.type == pygame.KEYDOWN and input_active:
             if e.key == pygame.K_RETURN:
                 if input_text.strip():
                     if network.join_game(input_text.strip()):
-                        multiplayer_mode = True; state = "waiting"; error_message = ""
+                        multiplayer_mode = True
+                        state = "waiting"
+                        error_message = ""
                     else:
-                        show_error(network.connection_error or "Wrong IP!"); input_text = ""
+                        show_error(network.connection_error or "Wrong IP!")
+                        input_text = ""
                 input_active = False
-            elif e.key == pygame.K_BACKSPACE: input_text = input_text[:-1]
-            elif e.key == pygame.K_ESCAPE: input_active = False; input_text = ""
-            elif len(input_text) < 15 and e.unicode.isprintable(): input_text += e.unicode
+            elif e.key == pygame.K_BACKSPACE:
+                input_text = input_text[:-1]
+            elif e.key == pygame.K_ESCAPE:
+                input_active = False
+                input_text = ""
+            elif len(input_text) < 15 and e.unicode.isprintable():
+                input_text += e.unicode
 
     # ================= MOUSE JUMP =================
-    if state == "play" and mouse_pressed[0]: player.jump()
+    if state == "play" and mouse_pressed[0]:
+        player.jump()
 
     # ================= SEND DATA =================
     if multiplayer_mode and network.connected and state == "play":
         msg = {"type": "player_data", "data": player.get_data()}
+        
         if network.is_host:
             obstacles_data = []
             for o in obstacles:
-                obs = {"id": o.id, "type": o.type, "x": o.x, "y": o.y, "w": o.w, "h": o.h, "speed": o.speed, "color": o.color}
+                obs = {
+                    "id": o.id,
+                    "type": o.type,
+                    "x": o.x,
+                    "y": o.y,
+                    "w": o.w,
+                    "h": o.h,
+                    "speed": o.speed,
+                    "color": o.color
+                }
                 if o.type == "moving_block":
-                    obs.update({"start_y": o.start_y, "move_range": o.move_range, "move_speed": o.move_speed, "move_dir": o.move_dir})
+                    obs["start_y"] = o.start_y
+                    obs["move_range"] = o.move_range
+                    obs["move_speed"] = o.move_speed
+                    obs["move_dir"] = o.move_dir
                 elif o.type == "gap_block":
-                    obs.update({"gap_width": o.gap_width, "has_second": o.has_second})
+                    obs["gap_width"] = o.gap_width
+                    obs["has_second"] = o.has_second
+                
                 obstacles_data.append(obs)
-            msg["obstacles"] = obstacles_data; msg["score"] = score; msg["current_speed"] = current_speed
+            msg["obstacles"] = obstacles_data
+            msg["score"] = score
+            msg["current_speed"] = current_speed
+        
         network.send_data(msg)
 
     # ================= GAME LOGIC =================
     if state == "play":
         current_speed = min(MAX_SPEED, BASE_SPEED + (score * SPEED_INCREASE_RATE))
+
         player.update(obstacles)
 
         if multiplayer_mode and network.connected:
             other_player.update(obstacles)
+
             for o in obstacles:
-                if o.type in ["spike","double_spike","tall_spike","triple_spike"]:
-                    if not player.dead and player.rect().colliderect(o.rect()): player.dead = True
+                if o.type in ["spike", "double_spike", "tall_spike", "triple_spike"]:
+                    if not player.dead and player.rect().colliderect(o.rect()):
+                        player.dead = True
+
             if network.is_host:
                 for o in obstacles:
-                    if o.type in ["spike","double_spike","tall_spike","triple_spike"]:
-                        if not other_player.dead and other_player.rect().colliderect(o.rect()): other_player.dead = True
+                    if o.type in ["spike", "double_spike", "tall_spike", "triple_spike"]:
+                        if not other_player.dead and other_player.rect().colliderect(o.rect()):
+                            other_player.dead = True
+
             if player.dead and mp_result is None:
-                trigger_game_over("lose"); network.send_data({"type": "game_over", "result": "win"})
+                trigger_game_over("lose")
+                network.send_data({"type": "game_over", "result": "win"})
+
             if network.is_host and other_player.dead and mp_result is None:
-                trigger_game_over("win"); network.send_data({"type": "game_over", "result": "lose"})
+                trigger_game_over("win")
+                network.send_data({"type": "game_over", "result": "lose"})
+
         else:
             for o in obstacles:
-                if o.type in ["spike","double_spike","tall_spike","triple_spike"]:
-                    if player.rect().colliderect(o.rect()): player.dead = True
+                if o.type in ["spike", "double_spike", "tall_spike", "triple_spike"]:
+                    if player.rect().colliderect(o.rect()):
+                        player.dead = True
+
             if player.dead:
-                state = "over"; pygame.mixer.music.stop(); play_death_sound(); last_game_speed = current_speed
-                if current_speed > max_speed_record: max_speed_record = current_speed
-                if score > high_score: high_score = score
+                state = "over"
+                pygame.mixer.music.stop()
+                play_death_sound()
+                last_game_speed = current_speed
+                if current_speed > max_speed_record:
+                    max_speed_record = current_speed
+                if score > high_score:
+                    high_score = score
                 save_scores(high_score, max_speed_record)
 
         if not multiplayer_mode or network.is_host:
             spawn += 1
             if spawn > max(40, 70 - int(score * 0.5)):
-                obstacles.append(Obstacle(current_speed)); spawn = 0
+                obstacles.append(Obstacle(current_speed))
+                spawn = 0
             for o in obstacles[:]:
                 o.update()
                 if o.off():
-                    obstacles.remove(o); score += 1; play_score_sound()
+                    obstacles.remove(o)
+                    score += 1
+                    play_score_sound()
 
     # ================= DRAW =================
-    parallax_bg(); draw_ground()
+    parallax_bg()
+    draw_ground()
 
     if state == "menu":
         t = font_big.render("GEOMETRY DASH PRO", True, BLUE)
-        screen.blit(t, (WIDTH//2 - t.get_width()//2, 60))
+        screen.blit(t, (WIDTH // 2 - t.get_width() // 2, 60))
         
         btns = [
-            Button(WIDTH//2-150, 180, 300, 60, "PLAY", BLUE, CYAN),
-            Button(WIDTH//2-150, 260, 300, 60, "MULTIPLAYER", PURPLE, PINK),
-            Button(WIDTH//2-150, 340, 300, 60, "SETTINGS", GREEN, YELLOW),
-            Button(WIDTH//2-150, 420, 300, 60, "EXIT", RED, ORANGE)
+            TextButton(WIDTH // 2, 200, "PLAY"),
+            TextButton(WIDTH // 2, 270, "MULTIPLAYER"),
+            TextButton(WIDTH // 2, 340, "SETTINGS"),
+            TextButton(WIDTH // 2, 410, "EXIT")
         ]
-        for btn in btns: btn.update(mouse_pos); btn.draw(font_med)
         
-        if btns[0].is_clicked(mouse_pos, mouse_pressed): state = "play"; reset(); play_game_music()
-        elif btns[1].is_clicked(mouse_pos, mouse_pressed): state = "multiplayer_menu"
-        elif btns[2].is_clicked(mouse_pos, mouse_pressed): state = "settings"
-        elif btns[3].is_clicked(mouse_pos, mouse_pressed): running = False
-        
-        screen.blit(font_small.render(f"High Score: {high_score}", True, YELLOW), (WIDTH//2-100, 500))
-        screen.blit(font_small.render(f"Max Speed: {max_speed_record:.1f}", True, get_speed_color_for_value(max_speed_record)), (WIDTH//2-100, 530))
-
-    elif state == "multiplayer_menu":
-        screen.blit(font_big.render("MULTIPLAYER", True, CYAN), (WIDTH//2-180, 80))
-        screen.blit(font_med.render(f"IP: {get_local_ip()}", True, YELLOW), (WIDTH//2-150, 160))
-        
-        btns = [
-            Button(WIDTH//2-150, 230, 300, 60, "HOST", GREEN, YELLOW),
-            Button(WIDTH//2-150, 310, 300, 60, "JOIN", BLUE, CYAN),
-            Button(WIDTH//2-150, 390, 300, 60, "BACK", RED, ORANGE)
-        ]
-        for btn in btns: btn.update(mouse_pos); btn.draw(font_med)
+        for btn in btns:
+            btn.update(mouse_pos)
+            btn.draw(font_med)
         
         if btns[0].is_clicked(mouse_pos, mouse_pressed):
-            if network.host_game(): multiplayer_mode = True; state = "waiting"
-            else: show_error("Failed!")
-        elif btns[1].is_clicked(mouse_pos, mouse_pressed): input_active = True; input_text = ""
-        elif btns[2].is_clicked(mouse_pos, mouse_pressed): state = "menu"; network.close(); multiplayer_mode = False
+            state = "play"
+            reset()
+            play_game_music()
+        elif btns[1].is_clicked(mouse_pos, mouse_pressed):
+            state = "multiplayer_menu"
+        elif btns[2].is_clicked(mouse_pos, mouse_pressed):
+            state = "settings"
+        elif btns[3].is_clicked(mouse_pos, mouse_pressed):
+            running = False
+        
+        screen.blit(font_small.render(f"High Score: {high_score}", True, GRAY), (WIDTH // 2 - 80, 490))
+        screen.blit(font_small.render(f"Max Speed: {max_speed_record:.1f}", True, GRAY), (WIDTH // 2 - 80, 520))
+
+    elif state == "multiplayer_menu":
+        screen.blit(font_big.render("MULTIPLAYER", True, CYAN), (WIDTH // 2 - 180, 80))
+        screen.blit(font_small.render(f"Your IP: {get_local_ip()}", True, GRAY), (WIDTH // 2 - 120, 150))
+        
+        btns = [
+            TextButton(WIDTH // 2, 220, "HOST GAME"),
+            TextButton(WIDTH // 2, 290, "JOIN GAME"),
+            TextButton(WIDTH // 2, 360, "BACK")
+        ]
+        
+        for btn in btns:
+            btn.update(mouse_pos)
+            btn.draw(font_med)
+        
+        if btns[0].is_clicked(mouse_pos, mouse_pressed):
+            if network.host_game():
+                multiplayer_mode = True
+                state = "waiting"
+            else:
+                show_error("Failed!")
+        elif btns[1].is_clicked(mouse_pos, mouse_pressed):
+            input_active = True
+            input_text = ""
+        elif btns[2].is_clicked(mouse_pos, mouse_pressed):
+            state = "menu"
+            network.close()
+            multiplayer_mode = False
         
         if error_message:
-            screen.blit(font_med.render(error_message, True, RED), (WIDTH//2-150, 470))
+            screen.blit(font_small.render(error_message, True, RED), (WIDTH // 2 - 100, 420))
         if input_active:
-            pygame.draw.rect(screen, YELLOW, (WIDTH//2-150, 500, 300, 40), 3)
-            screen.blit(font_small.render(input_text, True, WHITE), (WIDTH//2-140, 510))
+            screen.blit(font_small.render("Enter host IP:", True, GRAY), (WIDTH // 2 - 100, 450))
+            pygame.draw.line(screen, WHITE, (WIDTH // 2 - 150, 500), (WIDTH // 2 + 150, 500), 2)
+            screen.blit(font_med.render(input_text, True, WHITE), (WIDTH // 2 - 140, 470))
 
     elif state == "waiting":
-        screen.blit(font_big.render("WAITING...", True, YELLOW), (WIDTH//2-180, 160))
+        screen.blit(font_big.render("WAITING...", True, YELLOW), (WIDTH // 2 - 160, 140))
         
         if network.is_host:
-            screen.blit(font_med.render("Waiting...", True, WHITE), (WIDTH//2-150, 240))
-            screen.blit(font_small.render(f"IP: {get_local_ip()}", True, CYAN), (WIDTH//2-120, 280))
+            screen.blit(font_small.render("Waiting for player...", True, GRAY), (WIDTH // 2 - 140, 220))
+            screen.blit(font_small.render(f"Your IP: {get_local_ip()}", True, CYAN), (WIDTH // 2 - 100, 260))
             if network.connected:
-                screen.blit(font_med.render("Connected!", True, GREEN), (WIDTH//2-150, 330))
-                btn_start = Button(WIDTH//2-150, 390, 300, 60, "START", GREEN, YELLOW)
-                btn_start.update(mouse_pos); btn_start.draw(font_med)
+                screen.blit(font_med.render("Player connected!", True, GREEN), (WIDTH // 2 - 160, 310))
+                
+                btn_start = TextButton(WIDTH // 2, 390, "START GAME", WHITE, GREEN)
+                btn_start.update(mouse_pos)
+                btn_start.draw(font_med)
+                
                 if btn_start.is_clicked(mouse_pos, mouse_pressed):
-                    network.send_data({"type": "start"}); state = "play"; reset(); play_game_music()
+                    network.send_data({"type": "start"})
+                    state = "play"
+                    reset()
+                    play_game_music()
         else:
-            screen.blit(font_med.render("Connected!" if network.connected else "Connecting...", True, GREEN if network.connected else WHITE), (WIDTH//2-150, 260))
             if network.connected:
-                screen.blit(font_med.render("Wait for host...", True, WHITE), (WIDTH//2-180, 310))
+                screen.blit(font_small.render("Connected!", True, GREEN), (WIDTH // 2 - 80, 240))
+                screen.blit(font_small.render("Waiting for host to start...", True, GRAY), (WIDTH // 2 - 160, 290))
+            else:
+                screen.blit(font_small.render("Connecting...", True, GRAY), (WIDTH // 2 - 80, 240))
         
-        btn_cancel = Button(WIDTH//2-150, HEIGHT-120, 300, 60, "CANCEL", RED, ORANGE)
-        btn_cancel.update(mouse_pos); btn_cancel.draw(font_med)
-        if btn_cancel.is_clicked(mouse_pos, mouse_pressed): state = "menu"; network.close(); multiplayer_mode = False
+        btn_cancel = TextButton(WIDTH // 2, HEIGHT - 80, "CANCEL", WHITE, RED)
+        btn_cancel.update(mouse_pos)
+        btn_cancel.draw(font_med)
+        
+        if btn_cancel.is_clicked(mouse_pos, mouse_pressed):
+            state = "menu"
+            network.close()
+            multiplayer_mode = False
 
     elif state == "settings":
-        screen.blit(font_big.render("SETTINGS", True, GREEN), (WIDTH//2-150, 40))
+        screen.blit(font_big.render("SETTINGS", True, GREEN), (WIDTH // 2 - 140, 40))
         
-        y_pos = 120
-        screen.blit(font_med.render("Skin:", True, WHITE), (WIDTH//2-300, y_pos))
-        btn_left = Button(WIDTH//2-100, y_pos, 50, 50, "<", GRAY, YELLOW)
-        btn_right = Button(WIDTH//2+50, y_pos, 50, 50, ">", GRAY, YELLOW)
-        btn_left.update(mouse_pos); btn_right.update(mouse_pos)
-        btn_left.draw(font_med); btn_right.draw(font_med)
-        pygame.draw.rect(screen, SKINS[skin_index], (WIDTH//2-20, y_pos+5, 40, 40))
-        pygame.draw.rect(screen, WHITE, (WIDTH//2-20, y_pos+5, 40, 40), 3)
-        if btn_left.is_clicked(mouse_pos, mouse_pressed): skin_index = (skin_index - 1) % len(SKINS); player.skin = skin_index; save_settings({"fullscreen": fullscreen_enabled, "music_volume": music_volume, "sfx_volume": sfx_volume, "skin_index": skin_index}); pygame.time.wait(100)
-        elif btn_right.is_clicked(mouse_pos, mouse_pressed): skin_index = (skin_index + 1) % len(SKINS); player.skin = skin_index; save_settings({"fullscreen": fullscreen_enabled, "music_volume": music_volume, "sfx_volume": sfx_volume, "skin_index": skin_index}); pygame.time.wait(100)
+        y_pos = 130
+        
+        # Skin selector
+        screen.blit(font_small.render("Skin:", True, GRAY), (WIDTH // 2 - 280, y_pos))
+        btn_skin_left = TextButton(WIDTH // 2 - 80, y_pos + 15, "<")
+        btn_skin_right = TextButton(WIDTH // 2 + 80, y_pos + 15, ">")
+        
+        btn_skin_left.update(mouse_pos)
+        btn_skin_right.update(mouse_pos)
+        btn_skin_left.draw(font_med)
+        btn_skin_right.draw(font_med)
+        
+        # Skin preview
+        pygame.draw.rect(screen, SKINS[skin_index], (WIDTH // 2 - 20, y_pos + 5, 40, 40))
+        pygame.draw.rect(screen, WHITE, (WIDTH // 2 - 20, y_pos + 5, 40, 40), 2)
+        
+        if btn_skin_left.is_clicked(mouse_pos, mouse_pressed):
+            skin_index = (skin_index - 1) % len(SKINS)
+            player.skin = skin_index
+            save_settings({"fullscreen": fullscreen_enabled, "music_volume": music_volume, "sfx_volume": sfx_volume, "skin_index": skin_index})
+            pygame.time.wait(150)
+        elif btn_skin_right.is_clicked(mouse_pos, mouse_pressed):
+            skin_index = (skin_index + 1) % len(SKINS)
+            player.skin = skin_index
+            save_settings({"fullscreen": fullscreen_enabled, "music_volume": music_volume, "sfx_volume": sfx_volume, "skin_index": skin_index})
+            pygame.time.wait(150)
         
         y_pos += 90
-        screen.blit(font_med.render("Music:", True, WHITE), (WIDTH//2-300, y_pos))
-        slider_music = Slider(WIDTH//2-200, y_pos+40, 300, 20, 0.0, 1.0, music_volume)
-        slider_music.update(mouse_pos, mouse_pressed); slider_music.draw(font_small)
-        if slider_music.value != music_volume: music_volume = slider_music.value; update_music_volume(); save_settings({"fullscreen": fullscreen_enabled, "music_volume": music_volume, "sfx_volume": sfx_volume, "skin_index": skin_index})
         
-        y_pos += 100
-        screen.blit(font_med.render("SFX:", True, WHITE), (WIDTH//2-300, y_pos))
-        slider_sfx = Slider(WIDTH//2-200, y_pos+40, 300, 20, 0.0, 1.0, sfx_volume)
-        slider_sfx.update(mouse_pos, mouse_pressed); slider_sfx.draw(font_small)
-        if slider_sfx.value != sfx_volume: sfx_volume = slider_sfx.value; update_sfx_volume(); save_settings({"fullscreen": fullscreen_enabled, "music_volume": music_volume, "sfx_volume": sfx_volume, "skin_index": skin_index})
+        # Music volume
+        screen.blit(font_small.render("Music Volume:", True, GRAY), (WIDTH // 2 - 280, y_pos))
+        slider_music = Slider(WIDTH // 2 - 200, y_pos + 40, 300, 20, 0.0, 1.0, music_volume)
+        slider_music.update(mouse_pos, mouse_pressed)
+        slider_music.draw(font_small)
+        if slider_music.value != music_volume:
+            music_volume = slider_music.value
+            update_music_volume()
+            save_settings({"fullscreen": fullscreen_enabled, "music_volume": music_volume, "sfx_volume": sfx_volume, "skin_index": skin_index})
         
-        y_pos += 100
-        screen.blit(font_med.render("Fullscreen:", True, WHITE), (WIDTH//2-300, y_pos))
-        btn_fs = Button(WIDTH//2-100, y_pos, 200, 50, "ON" if fullscreen_enabled else "OFF", GREEN if fullscreen_enabled else RED, YELLOW if fullscreen_enabled else ORANGE)
-        btn_fs.update(mouse_pos); btn_fs.draw(font_med)
-        if btn_fs.is_clicked(mouse_pos, mouse_pressed): toggle_fullscreen(); pygame.time.wait(200)
+        y_pos += 90
         
-        btn_back = Button(WIDTH//2-150, HEIGHT-100, 300, 60, "BACK", BLUE, CYAN)
-        btn_back.update(mouse_pos); btn_back.draw(font_med)
-        if btn_back.is_clicked(mouse_pos, mouse_pressed): state = "menu"
+        # SFX volume
+        screen.blit(font_small.render("SFX Volume:", True, GRAY), (WIDTH // 2 - 280, y_pos))
+        slider_sfx = Slider(WIDTH // 2 - 200, y_pos + 40, 300, 20, 0.0, 1.0, sfx_volume)
+        slider_sfx.update(mouse_pos, mouse_pressed)
+        slider_sfx.draw(font_small)
+        if slider_sfx.value != sfx_volume:
+            sfx_volume = slider_sfx.value
+            update_sfx_volume()
+            save_settings({"fullscreen": fullscreen_enabled, "music_volume": music_volume, "sfx_volume": sfx_volume, "skin_index": skin_index})
+        
+        y_pos += 90
+        
+        # Fullscreen toggle
+        screen.blit(font_small.render("Fullscreen:", True, GRAY), (WIDTH // 2 - 280, y_pos))
+        btn_fullscreen = TextButton(WIDTH // 2, y_pos + 15, "ON" if fullscreen_enabled else "OFF",
+                                    GREEN if fullscreen_enabled else RED,
+                                    YELLOW)
+        btn_fullscreen.update(mouse_pos)
+        btn_fullscreen.draw(font_med)
+        
+        if btn_fullscreen.is_clicked(mouse_pos, mouse_pressed):
+            toggle_fullscreen()
+            pygame.time.wait(200)
+        
+        # Back button
+        btn_back = TextButton(WIDTH // 2, HEIGHT - 70, "BACK")
+        btn_back.update(mouse_pos)
+        btn_back.draw(font_med)
+        
+        if btn_back.is_clicked(mouse_pos, mouse_pressed):
+            state = "menu"
 
     elif state == "play":
-        for o in obstacles: o.draw()
-        if multiplayer_mode and network.connected: other_player.draw(is_other=True)
+        for o in obstacles:
+            o.draw()
+        if multiplayer_mode and network.connected:
+            other_player.draw(is_other=True)
         player.draw()
         
-        screen.blit(font_med.render(f"Score: {score}", True, WHITE), (10, 10))
-        screen.blit(font_small.render(f"Speed: {current_speed:.1f}", True, get_speed_color()), (10, 50))
-        
-        bw, bh, bx, by = 200, 10, 10, 85
-        sr = (current_speed - BASE_SPEED) / (MAX_SPEED - BASE_SPEED)
-        pygame.draw.rect(screen, GRAY, (bx, by, bw, bh), 2)
-        pygame.draw.rect(screen, get_speed_color(), (bx, by, int(bw*sr), bh))
+        screen.blit(font_small.render(f"Score: {score}", True, WHITE), (10, 10))
+        screen.blit(font_small.render(f"Speed: {current_speed:.1f}", True, get_speed_color()), (10, 40))
         
         if multiplayer_mode and network.connected:
-            screen.blit(font_small.render("MULTIPLAYER", True, CYAN), (WIDTH-200, 10))
-            screen.blit(font_small.render("HOST" if network.is_host else "CLIENT", True, YELLOW), (WIDTH-200, 35))
+            screen.blit(font_small.render("MULTIPLAYER", True, CYAN), (WIDTH - 160, 10))
+            screen.blit(font_small.render("HOST" if network.is_host else "CLIENT", True, YELLOW), (WIDTH - 160, 35))
         
-        screen.blit(font_small.render("CLICK = JUMP | ESC = QUIT", True, GRAY), (WIDTH//2-150, 10))
+        screen.blit(font_small.render("CLICK = JUMP", True, GRAY), (WIDTH // 2 - 80, 10))
 
     elif state == "over":
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        overlay.fill((0,0,0,160)); screen.blit(overlay, (0,0))
+        overlay.fill((0, 0, 0, 160))
+        screen.blit(overlay, (0, 0))
         
         if multiplayer_mode:
-            txt = font_huge.render("YOU WIN!" if mp_result == "win" else "YOU LOSE!", True, GREEN if mp_result == "win" else RED)
-            screen.blit(txt, (WIDTH//2 - txt.get_width()//2, 80))
-            pygame.draw.rect(screen, GREEN if mp_result == "win" else RED, (40, 60, WIDTH-80, 160), 4)
-            screen.blit(font_med.render(f"Score: {score}", True, WHITE), (WIDTH//2-100, 260))
+            txt = font_huge.render("YOU WIN!" if mp_result == "win" else "YOU LOSE!",
+                                   True,
+                                   GREEN if mp_result == "win" else RED)
+            screen.blit(txt, (WIDTH // 2 - txt.get_width() // 2, 80))
+            screen.blit(font_med.render(f"Score: {score}", True, WHITE), (WIDTH // 2 - 80, 260))
             
             btns = [
-                Button(WIDTH//2-150, 340, 300, 60, "MENU", BLUE, CYAN),
-                Button(WIDTH//2-150, 420, 300, 60, "EXIT", RED, ORANGE)
+                TextButton(WIDTH // 2, 340, "MENU"),
+                TextButton(WIDTH // 2, 410, "EXIT")
             ]
-            for btn in btns: btn.update(mouse_pos); btn.draw(font_med)
-            if btns[0].is_clicked(mouse_pos, mouse_pressed): state = "menu"; play_menu_music(); network.close(); multiplayer_mode = False
-            elif btns[1].is_clicked(mouse_pos, mouse_pressed): running = False
+            for btn in btns:
+                btn.update(mouse_pos)
+                btn.draw(font_med)
+            
+            if btns[0].is_clicked(mouse_pos, mouse_pressed):
+                state = "menu"
+                play_menu_music()
+                network.close()
+                multiplayer_mode = False
+            elif btns[1].is_clicked(mouse_pos, mouse_pressed):
+                running = False
         else:
-            screen.blit(font_big.render("GAME OVER", True, RED), (WIDTH//2-200, 100))
-            screen.blit(font_med.render(f"Score: {score}", True, WHITE), (WIDTH//2-100, 200))
+            screen.blit(font_big.render("GAME OVER", True, RED), (WIDTH // 2 - 180, 100))
+            screen.blit(font_med.render(f"Score: {score}", True, WHITE), (WIDTH // 2 - 80, 200))
             if score == high_score and score > 0:
-                screen.blit(font_med.render("NEW HIGH!", True, YELLOW), (WIDTH//2-120, 250))
+                screen.blit(font_small.render("NEW HIGH SCORE!", True, YELLOW), (WIDTH // 2 - 110, 250))
             
             btns = [
-                Button(WIDTH//2-150, 320, 300, 60, "RESTART", GREEN, YELLOW),
-                Button(WIDTH//2-150, 400, 300, 60, "MENU", BLUE, CYAN)
+                TextButton(WIDTH // 2, 320, "RESTART"),
+                TextButton(WIDTH // 2, 390, "MENU")
             ]
-            for btn in btns: btn.update(mouse_pos); btn.draw(font_med)
-            if btns[0].is_clicked(mouse_pos, mouse_pressed): state = "play"; reset(); play_game_music()
-            elif btns[1].is_clicked(mouse_pos, mouse_pressed): state = "menu"; play_menu_music()
-
-    # ESC fallback
-    if pygame.key.get_pressed()[pygame.K_ESCAPE] and state in ["play", "settings", "multiplayer_menu", "waiting", "over"]:
-        state = "menu"; play_menu_music()
-        if multiplayer_mode: network.close(); multiplayer_mode = False
+            for btn in btns:
+                btn.update(mouse_pos)
+                btn.draw(font_med)
+            
+            if btns[0].is_clicked(mouse_pos, mouse_pressed):
+                state = "play"
+                reset()
+                play_game_music()
+            elif btns[1].is_clicked(mouse_pos, mouse_pressed):
+                state = "menu"
+                play_menu_music()
 
     pygame.display.flip()
 
