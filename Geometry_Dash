@@ -106,12 +106,26 @@ max_speed_record = scores["max_speed"]
 
 # ================= PLAYER SKINS =================
 SKINS = [
-    (0, 150, 255),
-    (255, 255, 0),
-    (255, 0, 255),
-    (0, 255, 255),
-    (255, 0, 0),
-    (0, 255, 0)
+    (0, 150, 255),      # Kék
+    (255, 255, 0),      # Sárga
+    (255, 0, 255),      # Magenta
+    (0, 255, 255),      # Cián
+    (255, 0, 0),        # Piros
+    (0, 255, 0),        # Zöld
+    (255, 102, 0),      # Narancs
+    (128, 0, 128),      # Lila
+    (255, 192, 203),    # Rózsaszín
+    (0, 128, 128),      # Teal
+    (255, 165, 0),      # Arany
+    (173, 255, 47),     # Zöld-sárga
+    (220, 20, 60),      # Crimson
+    (64, 224, 208),     # Turquoise
+    (255, 215, 0),      # Arany (sötétebb)
+    (186, 85, 211),     # Közép-orchidea
+    (50, 205, 50),      # Lime zöld
+    (255, 69, 0),       # Narancsvörös
+    (138, 43, 226),     # Kék ibolya
+    (255, 20, 147),     # Mély rózsaszín
 ]
 
 # ================= PARALLAX BG =================
@@ -222,7 +236,7 @@ def is_valid_ip(ip_string):
     except:
         return False
 
-# ================= TEXT BUTTON CLASS - FIXED VERSION =================
+# ================= TEXT BUTTON CLASS =================
 class TextButton:
     def __init__(self, x, y, text, normal_color=WHITE, hover_color=YELLOW):
         self.text = text
@@ -257,8 +271,47 @@ class TextButton:
         self.rect = text_surf.get_rect(center=(self.x, self.y))
         screen.blit(text_surf, self.rect)
     
-    def is_clicked(self, mouse_pos, mouse_pressed):
-        return self.rect.collidepoint(mouse_pos) and mouse_pressed[0]
+    def is_clicked(self, event):
+        # Check for MOUSEBUTTONDOWN event
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            return self.rect.collidepoint(event.pos)
+        return False
+
+# ================= PAUSE BUTTON CLASS =================
+class PauseButton:
+    def __init__(self, x, y, size=40):
+        self.x = x
+        self.y = y
+        self.size = size
+        self.rect = pygame.Rect(x - size // 2, y - size // 2, size, size)
+        self.hovered = False
+    
+    def update(self, mouse_pos):
+        self.hovered = self.rect.collidepoint(mouse_pos)
+    
+    def draw(self):
+        # Background circle
+        color = YELLOW if self.hovered else WHITE
+        pygame.draw.circle(screen, color, (self.x, self.y), self.size // 2)
+        pygame.draw.circle(screen, BLACK, (self.x, self.y), self.size // 2, 3)
+        
+        # Pause symbol (two vertical bars)
+        bar_width = 4
+        bar_height = self.size // 2
+        bar_gap = 6
+        
+        left_bar_x = self.x - bar_gap // 2 - bar_width
+        right_bar_x = self.x + bar_gap // 2
+        bar_y = self.y - bar_height // 2
+        
+        pygame.draw.rect(screen, BLACK, (left_bar_x, bar_y, bar_width, bar_height))
+        pygame.draw.rect(screen, BLACK, (right_bar_x, bar_y, bar_width, bar_height))
+    
+    def is_clicked(self, event):
+        # Check for MOUSEBUTTONDOWN event
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            return self.rect.collidepoint(event.pos)
+        return False
 
 # ================= SLIDER CLASS =================
 class Slider:
@@ -669,6 +722,7 @@ score = 0
 current_speed = BASE_SPEED
 last_game_speed = BASE_SPEED
 state = "menu"
+paused = False
 network = NetworkManager()
 multiplayer_mode = False
 mp_result = None
@@ -686,7 +740,7 @@ error_message_timer = 0
 
 # ================= FUNCTIONS =================
 def reset():
-    global player, other_player, obstacles, spawn, score, current_speed, mp_result
+    global player, other_player, obstacles, spawn, score, current_speed, mp_result, paused
     player = Player(player_skin=skin_index)
     other_player = Player(x=150, player_skin=0)
     obstacles = []
@@ -694,11 +748,13 @@ def reset():
     score = 0
     current_speed = BASE_SPEED
     mp_result = None
+    paused = False
 
 def parallax_bg():
     screen.fill((10, 10, 30))
     for s in stars:
-        s[0] -= s[2] * (current_speed / BASE_SPEED)
+        if not paused:
+            s[0] -= s[2] * (current_speed / BASE_SPEED)
         if s[0] < 0:
             s[0] = WIDTH
         pygame.draw.circle(screen, WHITE, (s[0], s[1]), s[2])
@@ -814,11 +870,14 @@ while running:
                         if "current_speed" in msg:
                             globals()["current_speed"] = msg["current_speed"]
 
-    # ================= EVENTS (IP INPUT ONLY) =================
+    # ================= EVENTS =================
     for e in pygame.event.get():
+        skip_jump = False
+        
         if e.type == pygame.QUIT:
             running = False
             network.close()
+        
         if e.type == pygame.KEYDOWN and input_active:
             if e.key == pygame.K_RETURN:
                 if input_text.strip():
@@ -837,13 +896,167 @@ while running:
                 input_text = ""
             elif len(input_text) < 15 and e.unicode.isprintable():
                 input_text += e.unicode
-
-    # ================= MOUSE JUMP =================
-    if state == "play" and mouse_pressed[0]:
-        player.jump()
+        
+        # PAUSE BUTTON CLICK - pouze v singleplayer
+        if state == "play" and not multiplayer_mode:
+            pause_btn = PauseButton(WIDTH - 40, 40)
+            pause_btn.update(mouse_pos)
+            if pause_btn.is_clicked(e):
+                paused = not paused
+                if paused:
+                    pygame.mixer.music.pause()
+                else:
+                    pygame.mixer.music.unpause()
+        
+        # BUTTON CLICKS IN MENUS
+        if state == "menu":
+            btns = [
+                TextButton(WIDTH // 2, 200, "PLAY"),
+                TextButton(WIDTH // 2, 270, "MULTIPLAYER"),
+                TextButton(WIDTH // 2, 340, "SETTINGS"),
+                TextButton(WIDTH // 2, 410, "EXIT")
+            ]
+            for i, btn in enumerate(btns):
+                btn.update(mouse_pos)
+                if btn.is_clicked(e):
+                    if i == 0:
+                        state = "play"
+                        reset()
+                        play_game_music()
+                    elif i == 1:
+                        state = "multiplayer_menu"
+                    elif i == 2:
+                        state = "settings"
+                    elif i == 3:
+                        running = False
+        
+        elif state == "multiplayer_menu":
+            btns = [
+                TextButton(WIDTH // 2, 220, "HOST GAME"),
+                TextButton(WIDTH // 2, 290, "JOIN GAME"),
+                TextButton(WIDTH // 2, 360, "BACK")
+            ]
+            for i, btn in enumerate(btns):
+                btn.update(mouse_pos)
+                if btn.is_clicked(e):
+                    if i == 0:
+                        if network.host_game():
+                            multiplayer_mode = True
+                            state = "waiting"
+                        else:
+                            show_error("Failed!")
+                    elif i == 1:
+                        input_active = True
+                        input_text = ""
+                    elif i == 2:
+                        state = "menu"
+                        network.close()
+                        multiplayer_mode = False
+        
+        elif state == "waiting":
+            if network.is_host and network.connected:
+                btn_start = TextButton(WIDTH // 2, 390, "START GAME", WHITE, GREEN)
+                btn_start.update(mouse_pos)
+                if btn_start.is_clicked(e):
+                    network.send_data({"type": "start"})
+                    state = "play"
+                    reset()
+                    play_game_music()
+            
+            btn_cancel = TextButton(WIDTH // 2, HEIGHT - 80, "CANCEL", WHITE, RED)
+            btn_cancel.update(mouse_pos)
+            if btn_cancel.is_clicked(e):
+                state = "menu"
+                network.close()
+                multiplayer_mode = False
+        
+        elif state == "settings":
+            btn_skin_left = TextButton(WIDTH // 2 - 80, 145, "<")
+            btn_skin_right = TextButton(WIDTH // 2 + 80, 145, ">")
+            btn_skin_left.update(mouse_pos)
+            btn_skin_right.update(mouse_pos)
+            
+            if btn_skin_left.is_clicked(e):
+                skin_index = (skin_index - 1) % len(SKINS)
+                player.skin = skin_index
+                save_settings({"fullscreen": fullscreen_enabled, "music_volume": music_volume, "sfx_volume": sfx_volume, "skin_index": skin_index})
+            elif btn_skin_right.is_clicked(e):
+                skin_index = (skin_index + 1) % len(SKINS)
+                player.skin = skin_index
+                save_settings({"fullscreen": fullscreen_enabled, "music_volume": music_volume, "sfx_volume": sfx_volume, "skin_index": skin_index})
+            
+            btn_fullscreen = TextButton(WIDTH // 2, 505, "ON" if fullscreen_enabled else "OFF",
+                                        GREEN if fullscreen_enabled else RED, YELLOW)
+            btn_fullscreen.update(mouse_pos)
+            if btn_fullscreen.is_clicked(e):
+                toggle_fullscreen()
+            
+            btn_back = TextButton(WIDTH // 2, HEIGHT - 70, "BACK")
+            btn_back.update(mouse_pos)
+            if btn_back.is_clicked(e):
+                state = "menu"
+        
+        elif state == "play" and paused:
+            btns_pause = [
+                TextButton(WIDTH // 2, 300, "RESUME", WHITE, GREEN),
+                TextButton(WIDTH // 2, 380, "MENU", WHITE, RED)
+            ]
+            for i, btn in enumerate(btns_pause):
+                btn.update(mouse_pos)
+                if btn.is_clicked(e):
+                    if i == 0:
+                        paused = False
+                        skip_jump = True
+                        pygame.mixer.music.unpause()
+                    elif i == 1:
+                        state = "menu"
+                        play_menu_music()
+                        paused = False
+        
+        elif state == "over":
+            if multiplayer_mode:
+                btns = [
+                    TextButton(WIDTH // 2, 340, "MENU"),
+                    TextButton(WIDTH // 2, 410, "EXIT")
+                ]
+                for i, btn in enumerate(btns):
+                    btn.update(mouse_pos)
+                    if btn.is_clicked(e):
+                        if i == 0:
+                            state = "menu"
+                            play_menu_music()
+                            network.close()
+                            multiplayer_mode = False
+                        elif i == 1:
+                            running = False
+            else:
+                btns = [
+                    TextButton(WIDTH // 2, 320, "RESTART"),
+                    TextButton(WIDTH // 2, 390, "MENU")
+                ]
+                for i, btn in enumerate(btns):
+                    btn.update(mouse_pos)
+                    if btn.is_clicked(e):
+                        if i == 0:
+                            state = "play"
+                            reset()
+                            play_game_music()
+                        elif i == 1:
+                            state = "menu"
+                            play_menu_music()
+        
+        # JUMP with MOUSE CLICK
+        if state == "play" and not paused and not skip_jump and e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+            # Check if not clicking on pause button
+            if not multiplayer_mode:
+                pause_btn = PauseButton(WIDTH - 40, 40)
+                if not pause_btn.rect.collidepoint(e.pos):
+                    player.jump()
+            else:
+                player.jump()
 
     # ================= SEND DATA =================
-    if multiplayer_mode and network.connected and state == "play":
+    if multiplayer_mode and network.connected and state == "play" and not paused:
         msg = {"type": "player_data", "data": player.get_data()}
         
         if network.is_host:
@@ -876,7 +1089,7 @@ while running:
         network.send_data(msg)
 
     # ================= GAME LOGIC =================
-    if state == "play":
+    if state == "play" and not paused:
         current_speed = min(MAX_SPEED, BASE_SPEED + (score * SPEED_INCREASE_RATE))
 
         player.update(obstacles)
@@ -951,17 +1164,6 @@ while running:
             btn.update(mouse_pos)
             btn.draw(font_med)
         
-        if btns[0].is_clicked(mouse_pos, mouse_pressed):
-            state = "play"
-            reset()
-            play_game_music()
-        elif btns[1].is_clicked(mouse_pos, mouse_pressed):
-            state = "multiplayer_menu"
-        elif btns[2].is_clicked(mouse_pos, mouse_pressed):
-            state = "settings"
-        elif btns[3].is_clicked(mouse_pos, mouse_pressed):
-            running = False
-        
         screen.blit(font_small.render(f"High Score: {high_score}", True, GRAY), (WIDTH // 2 - 80, 490))
         screen.blit(font_small.render(f"Max Speed: {max_speed_record:.1f}", True, GRAY), (WIDTH // 2 - 80, 520))
 
@@ -978,20 +1180,6 @@ while running:
         for btn in btns:
             btn.update(mouse_pos)
             btn.draw(font_med)
-        
-        if btns[0].is_clicked(mouse_pos, mouse_pressed):
-            if network.host_game():
-                multiplayer_mode = True
-                state = "waiting"
-            else:
-                show_error("Failed!")
-        elif btns[1].is_clicked(mouse_pos, mouse_pressed):
-            input_active = True
-            input_text = ""
-        elif btns[2].is_clicked(mouse_pos, mouse_pressed):
-            state = "menu"
-            network.close()
-            multiplayer_mode = False
         
         if error_message:
             screen.blit(font_small.render(error_message, True, RED), (WIDTH // 2 - 100, 420))
@@ -1012,12 +1200,6 @@ while running:
                 btn_start = TextButton(WIDTH // 2, 390, "START GAME", WHITE, GREEN)
                 btn_start.update(mouse_pos)
                 btn_start.draw(font_med)
-                
-                if btn_start.is_clicked(mouse_pos, mouse_pressed):
-                    network.send_data({"type": "start"})
-                    state = "play"
-                    reset()
-                    play_game_music()
         else:
             if network.connected:
                 screen.blit(font_small.render("Connected!", True, GREEN), (WIDTH // 2 - 80, 240))
@@ -1028,11 +1210,6 @@ while running:
         btn_cancel = TextButton(WIDTH // 2, HEIGHT - 80, "CANCEL", WHITE, RED)
         btn_cancel.update(mouse_pos)
         btn_cancel.draw(font_med)
-        
-        if btn_cancel.is_clicked(mouse_pos, mouse_pressed):
-            state = "menu"
-            network.close()
-            multiplayer_mode = False
 
     elif state == "settings":
         screen.blit(font_big.render("SETTINGS", True, GREEN), (WIDTH // 2 - 140, 40))
@@ -1052,17 +1229,6 @@ while running:
         # Skin preview
         pygame.draw.rect(screen, SKINS[skin_index], (WIDTH // 2 - 20, y_pos + 5, 40, 40))
         pygame.draw.rect(screen, WHITE, (WIDTH // 2 - 20, y_pos + 5, 40, 40), 2)
-        
-        if btn_skin_left.is_clicked(mouse_pos, mouse_pressed):
-            skin_index = (skin_index - 1) % len(SKINS)
-            player.skin = skin_index
-            save_settings({"fullscreen": fullscreen_enabled, "music_volume": music_volume, "sfx_volume": sfx_volume, "skin_index": skin_index})
-            pygame.time.wait(150)
-        elif btn_skin_right.is_clicked(mouse_pos, mouse_pressed):
-            skin_index = (skin_index + 1) % len(SKINS)
-            player.skin = skin_index
-            save_settings({"fullscreen": fullscreen_enabled, "music_volume": music_volume, "sfx_volume": sfx_volume, "skin_index": skin_index})
-            pygame.time.wait(150)
         
         y_pos += 90
         
@@ -1098,17 +1264,10 @@ while running:
         btn_fullscreen.update(mouse_pos)
         btn_fullscreen.draw(font_med)
         
-        if btn_fullscreen.is_clicked(mouse_pos, mouse_pressed):
-            toggle_fullscreen()
-            pygame.time.wait(200)
-        
         # Back button
         btn_back = TextButton(WIDTH // 2, HEIGHT - 70, "BACK")
         btn_back.update(mouse_pos)
         btn_back.draw(font_med)
-        
-        if btn_back.is_clicked(mouse_pos, mouse_pressed):
-            state = "menu"
 
     elif state == "play":
         for o in obstacles:
@@ -1120,11 +1279,35 @@ while running:
         screen.blit(font_small.render(f"Score: {score}", True, WHITE), (10, 10))
         screen.blit(font_small.render(f"Speed: {current_speed:.1f}", True, get_speed_color()), (10, 40))
         
+        # PAUSE BUTTON - csak singleplayerben
+        if not multiplayer_mode:
+            pause_btn = PauseButton(WIDTH - 40, 40)
+            pause_btn.update(mouse_pos)
+            pause_btn.draw()
+        
         if multiplayer_mode and network.connected:
             screen.blit(font_small.render("MULTIPLAYER", True, CYAN), (WIDTH - 160, 10))
             screen.blit(font_small.render("HOST" if network.is_host else "CLIENT", True, YELLOW), (WIDTH - 160, 35))
         
-        screen.blit(font_small.render("CLICK = JUMP", True, GRAY), (WIDTH // 2 - 80, 10))
+        if not paused:
+            screen.blit(font_small.render("CLICK = JUMP", True, GRAY), (WIDTH // 2 - 80, 10))
+        
+        # PAUSE OVERLAY
+        if paused:
+            overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 180))
+            screen.blit(overlay, (0, 0))
+            
+            screen.blit(font_huge.render("PAUSED", True, YELLOW), (WIDTH // 2 - 200, 120))
+            
+            btns_pause = [
+                TextButton(WIDTH // 2, 300, "RESUME", WHITE, GREEN),
+                TextButton(WIDTH // 2, 380, "MENU", WHITE, RED)
+            ]
+            
+            for btn in btns_pause:
+                btn.update(mouse_pos)
+                btn.draw(font_med)
 
     elif state == "over":
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
@@ -1145,14 +1328,6 @@ while running:
             for btn in btns:
                 btn.update(mouse_pos)
                 btn.draw(font_med)
-            
-            if btns[0].is_clicked(mouse_pos, mouse_pressed):
-                state = "menu"
-                play_menu_music()
-                network.close()
-                multiplayer_mode = False
-            elif btns[1].is_clicked(mouse_pos, mouse_pressed):
-                running = False
         else:
             screen.blit(font_big.render("GAME OVER", True, RED), (WIDTH // 2 - 180, 100))
             screen.blit(font_med.render(f"Score: {score}", True, WHITE), (WIDTH // 2 - 80, 200))
@@ -1166,14 +1341,6 @@ while running:
             for btn in btns:
                 btn.update(mouse_pos)
                 btn.draw(font_med)
-            
-            if btns[0].is_clicked(mouse_pos, mouse_pressed):
-                state = "play"
-                reset()
-                play_game_music()
-            elif btns[1].is_clicked(mouse_pos, mouse_pressed):
-                state = "menu"
-                play_menu_music()
 
     pygame.display.flip()
 
