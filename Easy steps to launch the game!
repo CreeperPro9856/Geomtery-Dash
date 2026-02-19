@@ -1,0 +1,7 @@
+Read the "HOW_TO_INSTALL_EN.md" file or:
+1. Download the Python 3.9 or newer version.
+2. Extract the zip folder.
+3. Open the Python and write "pip install pygame" wait to install and write "pip install pywin32" wait to install and close Python.
+4. Run the "setup" file.
+5. Open the shortcut file on the table.
+6. Enjoy the game!
