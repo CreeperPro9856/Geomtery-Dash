@@ -2,7 +2,7 @@
 
 ## ⚡ Gyorstipp (30 másodperc)
 
-1. Nzip-ed ki a fájlok
+1. Nzip-ed ki a fájlokat
 2. Dupla kattintás: **`setup.bat`**
 3. Parancsikon megjelenik az asztalon
 4. Játék indítása! 🎮
@@ -162,3 +162,4 @@ Geometry-Dash/
 ```
 Geometry Dash PRO v1.0
 Windows 10/11 kompatiblis
+
