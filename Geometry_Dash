@@ -840,6 +840,12 @@ network = NetworkManager()
 multiplayer_mode = False
 mp_result = None
 
+# ================= COUNTDOWN STATE =================
+countdown_active = False
+countdown_value = 3
+countdown_timer = 0
+COUNTDOWN_DURATION = 60  # Képkockák per számjegy (60 FPS = 1 másodperc)
+
 # Check updates at startup
 try:
     check_for_updates(silent=True)
@@ -946,6 +952,14 @@ while running:
                     reset()
                     play_game_music()
 
+            elif msg_type == "countdown" and not network.is_host:
+                if state == "waiting":
+                    state = "countdown"
+                    countdown_active = True
+                    countdown_value = 3
+                    countdown_timer = 0
+                    reset()
+
             elif msg_type == "game_over":
                 result = msg.get("result")
                 if result in ("win", "lose"):
@@ -1048,9 +1062,11 @@ while running:
                 btn.update(mouse_pos)
                 if btn.is_clicked(e):
                     if i == 0:
-                        state = "play"
+                        state = "countdown"
+                        countdown_active = True
+                        countdown_value = 3
+                        countdown_timer = 0
                         reset()
-                        play_game_music()
                     elif i == 1:
                         state = "multiplayer_menu"
                     elif i == 2:
@@ -1096,10 +1112,12 @@ while running:
                 btn_start = TextButton(WIDTH // 2, 390, "START GAME", WHITE, GREEN)
                 btn_start.update(mouse_pos)
                 if btn_start.is_clicked(e):
-                    network.send_data({"type": "start"})
-                    state = "play"
+                    network.send_data({"type": "countdown"})
+                    state = "countdown"
+                    countdown_active = True
+                    countdown_value = 3
+                    countdown_timer = 0
                     reset()
-                    play_game_music()
             
             btn_cancel = TextButton(WIDTH // 2, HEIGHT - 80, "CANCEL", WHITE, RED)
             btn_cancel.update(mouse_pos)
@@ -1237,6 +1255,7 @@ while running:
     # ================= GAME LOGIC =================
     if state == "play" and not paused:
         current_speed = min(MAX_SPEED, BASE_SPEED + (score * SPEED_INCREASE_RATE))
+        current_speed = min(MAX_SPEED, BASE_SPEED + (score * SPEED_INCREASE_RATE))
 
         player.update(obstacles)
 
@@ -1291,6 +1310,28 @@ while running:
                     score += 1
                     play_score_sound()
 
+    # ================= COUNTDOWN LOGIC =================
+    if state == "countdown" and countdown_active:
+        countdown_timer += 1
+        
+        if countdown_timer >= COUNTDOWN_DURATION:
+            countdown_value -= 1
+            countdown_timer = 0
+            
+            if countdown_value < 1:
+                # Lezárás, játék indítása
+                state = "play"
+                countdown_active = False
+                countdown_value = 3
+                play_game_music()
+                
+                # Ha multiplayer és host, küld start üzenetet a kliensnek
+                if multiplayer_mode and network.is_host and network.connected:
+                    network.send_data({"type": "start"})
+            else:
+                # Szám lecsökkentése
+                play_jump_sound()
+
     # ================= DRAW =================
     parallax_bg()
     draw_ground()
@@ -1324,6 +1365,15 @@ while running:
             screen.blit(progress_text, (bar_x + bar_w + 10, bar_y - 2))
         screen.blit(font_small.render(f"High Score: {high_score}", True, GRAY), (WIDTH // 2 - 80, 600))
         screen.blit(font_small.render(f"Max Speed: {max_speed_record:.1f}", True, GRAY), (WIDTH // 2 - 80, 630))
+
+    elif state == "countdown":
+        # Countdown képernyő
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 120))
+        screen.blit(overlay, (0, 0))
+        
+        countdown_text = font_huge.render(str(countdown_value), True, YELLOW)
+        screen.blit(countdown_text, (WIDTH // 2 - countdown_text.get_width() // 2, HEIGHT // 2 - countdown_text.get_height() // 2))
 
     elif state == "multiplayer_menu":
         screen.blit(font_big.render("MULTIPLAYER", True, CYAN), (WIDTH // 2 - 180, 80))
